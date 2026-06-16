@@ -1,5 +1,5 @@
 --[[
-    Todoist REST API v2 client.
+    Todoist API v1 client.
     Handles authentication, HTTP dispatch, and basic error classification.
     All operations are synchronous (called inside NetworkMgr callbacks).
     See ADR-001 for the auth approach and ADR-004 for write-operation design.
@@ -10,7 +10,7 @@ local ltn12     = require("ltn12")
 local rapidjson = require("rapidjson")
 local logger    = require("logger")
 
-local BASE_URL = "https://api.todoist.com/rest/v2"
+local BASE_URL = "https://api.todoist.com/api/v1"
 
 local Api = {}
 Api.__index = Api
@@ -60,11 +60,6 @@ function Api:_request(method, path, body)
         return nil, "network_error:" .. tostring(code)
     end
 
-    -- 204 No Content — success response for POST /tasks/{id}/close
-    if code == 204 then
-        return true, nil
-    end
-
     if code == 401 then
         return nil, "unauthorized"
     end
@@ -80,6 +75,11 @@ function Api:_request(method, path, body)
     end
 
     local body_str = table.concat(resp_chunks)
+    -- closeTask returns 200 with a null body — handle that gracefully
+    if body_str == "" or body_str == "null" then
+        return true, nil
+    end
+
     local ok, data = pcall(rapidjson.decode, body_str)
     if not ok then
         logger.warn("Todoist API: JSON decode error:", data)
@@ -90,11 +90,21 @@ function Api:_request(method, path, body)
 end
 
 -- Returns (tasks_array, nil) or (nil, err_string).
+-- API v1 uses a dedicated filter endpoint that returns a paginated envelope.
+-- We fetch the first page (default 50 tasks) which is sufficient for a daily list.
 function Api:getTodayTasks()
-    return self:_request("GET", "/tasks?filter=today")
+    local data, err = self:_request("GET", "/tasks/filter?query=today")
+    if not data then return nil, err end
+    -- Unwrap paginated envelope: { results = [...], next_cursor = "..." }
+    if type(data) == "table" and data.results then
+        return data.results, nil
+    end
+    -- Fallback: plain array (future-proofing)
+    return data, nil
 end
 
 -- Returns (true, nil) on success or (nil, err_string) on failure.
+-- API v1 returns HTTP 200 with a null body (changed from 204 in REST v2).
 function Api:closeTask(task_id)
     return self:_request("POST", "/tasks/" .. tostring(task_id) .. "/close")
 end

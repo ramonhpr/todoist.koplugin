@@ -9,7 +9,7 @@
     and notification scheduler on load.
 
     Sub-modules (loaded lazily to keep startup fast):
-      api.lua           — Todoist REST API v2 client
+      api.lua           — Todoist API v1 client
       taskstore.lua     — in-memory task state + disk cache
       notifications.lua — UIManager-based due-time scheduler
       ui/tasklist.lua   — today's task list widget
