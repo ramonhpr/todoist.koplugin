@@ -69,13 +69,13 @@ function Api:_request(method, path, body)
         return nil, "rate_limited:" .. retry_after
     end
 
-    if code ~= 200 then
+    if code < 200 or code > 299 then
         logger.warn("Todoist API: unexpected HTTP status", code, "for", path)
         return nil, "http_error:" .. tostring(code)
     end
 
     local body_str = table.concat(resp_chunks)
-    -- closeTask returns 200 with a null body — handle that gracefully
+    -- closeTask returns 204 No Content — handle empty body gracefully
     if body_str == "" or body_str == "null" then
         return true, nil
     end
@@ -104,7 +104,7 @@ function Api:getTodayTasks()
 end
 
 -- Returns (true, nil) on success or (nil, err_string) on failure.
--- API v1 returns HTTP 200 with a null body (changed from 204 in REST v2).
+-- Returns HTTP 204 No Content on success.
 function Api:closeTask(task_id)
     return self:_request("POST", "/tasks/" .. tostring(task_id) .. "/close")
 end

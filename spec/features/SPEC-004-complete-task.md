@@ -1,7 +1,7 @@
 ---
 id: SPEC-004
 title: Complete a Task
-status: IN PROGRESS
+status: DONE
 created: 2026-06-16
 updated: 2026-06-16
 gate: G1
@@ -39,8 +39,8 @@ a background API call and rollback on failure. See ADR-004 (write operations).
 1. Each task row in the task list must expose a **"Complete"** action; it must require a single deliberate interaction (tap on a checkmark icon or a "Complete" button) and a confirmation step to prevent accidental completion.
 2. On confirmation, the task must be **immediately removed** from the visible list (optimistic update) and removed from the local cache.
 3. A `POST /tasks/{task_id}/close` request must be dispatched in the background after the optimistic removal.
-4. If the API call returns **204**, no further UI change is required; the task remains absent from the list.
-5. If the API call returns any non-204 response or a network error, the task must be **restored** to its original position in the list and marked with a visual "sync pending" indicator (e.g. a small icon or italic style).
+4. If the API call succeeds (HTTP 204 No Content), no further UI change is required; the task remains absent from the list.
+5. If the API call returns any error response or a network error, the task must be **restored** to its original position in the list and marked with a visual "sync pending" indicator (e.g. a small icon or italic style).
 6. When a task is restored after failure, an error message must appear stating "Could not complete '[task title]'" with a **"Retry"** button and a **"Dismiss"** button.
 7. Tapping "Retry" must re-dispatch `POST /tasks/{task_id}/close`; tapping "Dismiss" must leave the task in the list with the "sync pending" indicator visible until the next successful sync or manual refresh.
 8. A task with a "sync pending" completion must be retried automatically when the next scheduled sync runs (see SPEC-002 Req 2 polling interval).
