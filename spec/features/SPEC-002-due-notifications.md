@@ -1,7 +1,7 @@
 ---
 id: SPEC-002
 title: Due-Time Notifications
-status: APPROVED
+status: IN PROGRESS
 created: 2026-06-16
 updated: 2026-06-16
 gate: G1

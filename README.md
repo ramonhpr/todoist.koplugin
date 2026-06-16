@@ -7,10 +7,10 @@ with optional due-time notifications while you read.
 
 | Feature | Spec | Status |
 |---|---|---|
-| Today's task list | [SPEC-001](spec/features/SPEC-001-todays-task-list.md) | APPROVED |
-| Due-time notifications | [SPEC-002](spec/features/SPEC-002-due-notifications.md) | APPROVED |
-| Settings screen | [SPEC-003](spec/features/SPEC-003-settings-screen.md) | APPROVED |
-| Complete a task | [SPEC-004](spec/features/SPEC-004-complete-task.md) | APPROVED |
+| Today's task list | [SPEC-001](spec/features/SPEC-001-todays-task-list.md) | IN PROGRESS |
+| Due-time notifications | [SPEC-002](spec/features/SPEC-002-due-notifications.md) | IN PROGRESS |
+| Settings screen | [SPEC-003](spec/features/SPEC-003-settings-screen.md) | IN PROGRESS |
+| Complete a task | [SPEC-004](spec/features/SPEC-004-complete-task.md) | IN PROGRESS |
 
 ## Development Process
 
@@ -39,7 +39,7 @@ Key decisions:
 
 ## Installation
 
-> Plugin code not yet implemented. Track progress via the spec statuses above.
+> Initial implementation complete. See source files below.
 
 1. Copy `todoist.koplugin/` to your KOReader `plugins/` directory
 2. Restart KOReader
