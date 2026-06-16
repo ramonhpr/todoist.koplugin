@@ -1,6 +1,9 @@
 --[[
     Todoist KOReader plugin — entry point.
 
+    KOReader's plugin manager loads this file automatically as "main" from
+    inside the plugin folder (todoist.koplugin/main.lua).
+
     Registers a "Todoist" item in the KOReader Tools menu (available in both
     FileManager and Reader contexts). Initialises the API client, task store,
     and notification scheduler on load.
