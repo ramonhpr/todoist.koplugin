@@ -1,7 +1,7 @@
 ---
 id: SPEC-001
 title: Today's Task List
-status: IN PROGRESS
+status: DONE
 created: 2026-06-16
 updated: 2026-06-16
 gate: G1
@@ -20,7 +20,7 @@ and from a recent cache. See ADR-001 (API auth), ADR-003 (cache strategy).
 ## Scope
 
 ### In scope
-- Fetch tasks with Todoist filter `today` via REST API v2
+- Fetch tasks with Todoist filter `today` via API v1 (`GET /tasks/filter?query=today`)
 - Display task title, priority indicator, and due time (if time-specific)
 - Show cache age and an "offline" badge when data comes from disk cache
 - Manual "Refresh" button to force a live fetch

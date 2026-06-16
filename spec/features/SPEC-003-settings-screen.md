@@ -1,7 +1,7 @@
 ---
 id: SPEC-003
 title: Plugin Settings Screen
-status: IN PROGRESS
+status: DONE
 created: 2026-06-16
 updated: 2026-06-16
 gate: G1
@@ -34,7 +34,7 @@ Settings must survive KOReader restarts.
 
 1. The Settings screen must be reachable from both the plugin's task list screen and from KOReader's plugin settings menu.
 2. The API token field must mask the entered value (show `••••••••` after entry); a "Show / Hide" toggle must reveal it temporarily.
-3. After saving the API token, the plugin must immediately attempt a test call (`GET /tasks?filter=today`) and show a success or failure message.
+3. After saving the API token, the plugin must immediately attempt a test call (`GET /tasks/filter?query=today`) and show a success or failure message.
 4. The **"Enable notifications"** toggle (SPEC-002 Req 1) must be present; sub-settings (lead time, display timeout, polling interval) must be visually disabled and non-interactive when the toggle is off.
 5. Cache TTL must be configurable in minutes: options are 5, 15, 30, 60; default is 15.
 6. A **"Clear cache"** button must delete the on-disk task cache and show a confirmation toast.
