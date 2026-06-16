@@ -1,7 +1,7 @@
 ---
 id: SPEC-003
 title: Plugin Settings Screen
-status: APPROVED
+status: IN PROGRESS
 created: 2026-06-16
 updated: 2026-06-16
 gate: G1
