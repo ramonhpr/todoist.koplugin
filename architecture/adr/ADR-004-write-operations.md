@@ -16,7 +16,7 @@ seconds. A pessimistic update would leave the user staring at a frozen screen wa
 confirmation, which is a poor experience. Completion is also a low-risk, reversible
 operation in Todoist (tasks can be re-opened), so the cost of a brief inconsistency is low.
 
-The Todoist REST API v2 endpoint for completing a task is:
+The Todoist API v1 endpoint for completing a task is:
 `POST /tasks/{task_id}/close` — returns HTTP 204 No Content on success.
 
 ## Decision
