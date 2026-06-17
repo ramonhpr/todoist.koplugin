@@ -13,23 +13,23 @@
     A proper fix requires timegm(3) via FFI and is deferred to a future release.
 --]]
 
-local UIManager   = require("ui/uimanager")
-local InfoMessage = require("ui/widget/infomessage")
-local NetworkMgr  = require("ui/network/manager")
-local logger      = require("logger")
+local UIManager       = require("ui/uimanager")
+local InfoMessage     = require("ui/widget/infomessage")
+local NetworkMgr      = require("ui/network/manager")
+local logger          = require("logger")
 
-local STAGGER_SECS = 2  -- delay between simultaneous notifications to avoid UI collision
+local STAGGER_SECS    = 2 -- delay between simultaneous notifications to avoid UI collision
 
-local Notifications = {}
+local Notifications   = {}
 Notifications.__index = Notifications
 
 function Notifications:new(opts)
-    local o = setmetatable({}, self)
+    local o      = setmetatable({}, self)
     o.api        = opts.api
     o.task_store = opts.task_store
     o.settings   = opts.settings
-    o._sweep_fn  = nil  -- stored for UIManager:unschedule()
-    o._task_cbs  = {}   -- list of scheduled task callback refs
+    o._sweep_fn  = nil -- stored for UIManager:unschedule()
+    o._task_cbs  = {}  -- list of scheduled task callback refs
     return o
 end
 
@@ -39,6 +39,9 @@ end
 
 function Notifications:start()
     if not self:isEnabled() then return end
+    -- Arm task callbacks immediately from the cache so we don't miss any tasks
+    -- that fall within the first sweep interval (e.g. after a context switch).
+    self:scheduleTaskNotifications(self.task_store:getTasks())
     self:_scheduleSweep()
 end
 
@@ -56,6 +59,21 @@ end
 function Notifications:restart()
     self:stop()
     self:start()
+end
+
+--- Called by the plugin's onResume handler when the device wakes from sleep.
+--- UIManager's monotonic clock pauses during sleep, so any scheduled callback
+--- may be stale. Re-schedule the sweep to run shortly after wake, then re-arm
+--- individual task callbacks against the current wall-clock time.
+function Notifications:onResume()
+    if not self:isEnabled() then return end
+    -- Cancel stale sweep and task callbacks
+    self:stop()
+    -- Re-arm task notifications with fresh delay calculations
+    self:scheduleTaskNotifications(self.task_store:getTasks())
+    -- Run a sweep soon so we fetch any updates missed during sleep
+    self._sweep_fn = function() self:_runSweep() end
+    UIManager:scheduleIn(2, self._sweep_fn)
 end
 
 --- Schedule notification callbacks for all tasks with a due datetime.
@@ -116,7 +134,7 @@ function Notifications:_runSweep()
     end
 
     self:scheduleTaskNotifications(self.task_store:getTasks())
-    self:_scheduleSweep()  -- re-arm for the next interval
+    self:_scheduleSweep() -- re-arm for the next interval
 end
 
 function Notifications:_retryPendingCompletions()
@@ -139,7 +157,7 @@ function Notifications:_makeTaskCb(task, due_ts, disp_secs)
 
         self.task_store:markNotified(task.id)
         local hhmm = os.date("%H:%M", due_ts)
-        UIManager:show(InfoMessage:new{
+        UIManager:show(InfoMessage:new {
             text    = (task.content or "?") .. " — due " .. hhmm,
             timeout = disp_secs,
         })
@@ -152,7 +170,7 @@ function Notifications:_parseIso(dt)
     if not dt then return nil end
     local Y, M, D, h, m, s = dt:match("(%d%d%d%d)-(%d%d)-(%d%d)T(%d%d):(%d%d):(%d%d)")
     if not Y then return nil end
-    return os.time{
+    return os.time {
         year  = tonumber(Y),
         month = tonumber(M),
         day   = tonumber(D),
