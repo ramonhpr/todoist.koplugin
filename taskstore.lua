@@ -5,22 +5,28 @@
       • Hold the current list of today's tasks (visible in the UI)
       • Track optimistic completions (pending_completions) for rollback
       • Track which tasks have already fired a notification this session
-      • Persist task list to LuaSettings with a timestamp for TTL checks
+      • Persist task list to a DEDICATED cache file (todoist_cache.lua)
+
+    The task cache is intentionally stored in a separate LuaSettings file
+    from the main plugin settings (todoist.lua). This prevents cache writes
+    from ever touching — or corrupting — the file that holds the API token.
 
     See ADR-003 (cache strategy) and ADR-004 (write operations).
 --]]
 
-local logger = require("logger")
+local LuaSettings = require("luasettings")
+local logger      = require("logger")
 
-local TaskStore = {}
+local TaskStore   = {}
 TaskStore.__index = TaskStore
 
 function TaskStore:new(opts)
-    local o = setmetatable({}, self)
-    o.settings            = opts.settings
-    o.tasks               = {}  -- visible task list
-    o.pending_completions = {}  -- [task_id] = { task, orig_index }
-    o.notified_tasks      = {}  -- [task_id] = true  (session-scoped)
+    local o               = setmetatable({}, self)
+    o.settings            = opts.settings                     -- user prefs (token, TTL, etc.) — read-only here
+    o._cache              = LuaSettings:open(opts.cache_path) -- dedicated cache file
+    o.tasks               = {}                                -- visible task list
+    o.pending_completions = {}                                -- [task_id] = { task, orig_index }
+    o.notified_tasks      = {}                                -- [task_id] = true  (session-scoped)
     o.last_sync_time      = 0
     o:_load()
     return o
@@ -28,23 +34,18 @@ end
 
 -- ── Persistence ──────────────────────────────────────────────────────────────
 
+-- Writes only to the dedicated cache file; never touches the main settings.
 function TaskStore:_save()
-    self.settings:saveSetting("task_cache", {
-        tasks     = self.tasks,
-        timestamp = self.last_sync_time,
-    })
-    self.settings:flush()
+    self._cache:saveSetting("tasks", self.tasks)
+    self._cache:saveSetting("timestamp", self.last_sync_time)
+    self._cache:flush()
 end
 
 function TaskStore:_load()
-    -- Wrap in pcall so a corrupt cache file doesn't crash startup
-    local ok, cache = pcall(function()
-        return self.settings:readSetting("task_cache")
-    end)
-    if ok and type(cache) == "table" then
-        self.tasks          = type(cache.tasks) == "table" and cache.tasks or {}
-        self.last_sync_time = tonumber(cache.timestamp) or 0
-    end
+    -- _cache is already loaded by LuaSettings:open(); just read from it.
+    local tasks         = self._cache:readSetting("tasks")
+    self.tasks          = type(tasks) == "table" and tasks or {}
+    self.last_sync_time = tonumber(self._cache:readSetting("timestamp")) or 0
 end
 
 -- ── Task list management ──────────────────────────────────────────────────────
@@ -156,8 +157,9 @@ function TaskStore:clearCache()
     self.last_sync_time      = 0
     self.pending_completions = {}
     self.notified_tasks      = {}
-    self.settings:delSetting("task_cache")
-    self.settings:flush()
+    self._cache:delSetting("tasks")
+    self._cache:delSetting("timestamp")
+    self._cache:flush()
 end
 
 -- ── Private ───────────────────────────────────────────────────────────────────

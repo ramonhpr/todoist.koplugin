@@ -24,24 +24,33 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger          = require("logger")
 local _               = require("gettext")
 
-local Api           = require("api")
-local Notifications = require("notifications")
-local TaskStore     = require("taskstore")
+local Api             = require("api")
+local Notifications   = require("notifications")
+local TaskStore       = require("taskstore")
 
-local TodoistPlugin = WidgetContainer:extend{
+local TodoistPlugin   = WidgetContainer:extend {
     name        = "todoist",
     is_doc_only = false,
 }
 
 function TodoistPlugin:init()
-    self.settings = LuaSettings:open(
+    -- If init() is called again (e.g. Reader context after FileManager), stop
+    -- any previously scheduled notification callbacks before rebuilding state.
+    if self.notifications then
+        self.notifications:stop()
+    end
+
+    self.settings      = LuaSettings:open(
         DataStorage:getSettingsDir() .. "/todoist.lua"
     )
-    self.task_store = TaskStore:new{ settings = self.settings }
-    self.api        = Api:new{
+    self.task_store    = TaskStore:new {
+        settings   = self.settings,
+        cache_path = DataStorage:getSettingsDir() .. "/todoist_cache.lua",
+    }
+    self.api           = Api:new {
         token = self.settings:readSetting("api_token") or "",
     }
-    self.notifications = Notifications:new{
+    self.notifications = Notifications:new {
         api        = self.api,
         task_store = self.task_store,
         settings   = self.settings,
@@ -70,7 +79,7 @@ end
 function TodoistPlugin:openTaskList()
     local token = self.settings:readSetting("api_token")
     if not token or token == "" then
-        UIManager:show(InfoMessage:new{
+        UIManager:show(InfoMessage:new {
             text    = _("Please set your Todoist API token in Settings first."),
             timeout = 3,
         })
@@ -82,7 +91,7 @@ function TodoistPlugin:openTaskList()
     self.api:setToken(token)
 
     local TaskListWidget = require("ui/tasklist")
-    local widget = TaskListWidget:new{
+    local widget = TaskListWidget:new {
         plugin        = self,
         task_store    = self.task_store,
         api           = self.api,
@@ -95,7 +104,7 @@ end
 
 function TodoistPlugin:openSettings()
     local SettingsWidget = require("ui/settings")
-    SettingsWidget:new{
+    SettingsWidget:new {
         plugin           = self,
         settings         = self.settings,
         api              = self.api,
