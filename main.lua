@@ -29,13 +29,15 @@ local Notifications   = require("notifications")
 local TaskStore       = require("taskstore")
 
 local TodoistPlugin   = WidgetContainer:extend {
-    name        = "todoist",
-    is_doc_only = false,
+    name                   = "todoist",
+    is_doc_only            = false,
+    -- Class-level flag (survives instance teardown, like readtimer.koplugin).
+    -- onCloseWidget sets this so the next context's init() can restore the sweep.
+    _restore_notifications = false,
 }
 
 function TodoistPlugin:init()
-    -- If init() is called again (e.g. Reader context after FileManager), stop
-    -- any previously scheduled notification callbacks before rebuilding state.
+    -- Stop any callbacks from a previous instance on the same class (re-init guard).
     if self.notifications then
         self.notifications:stop()
     end
@@ -58,8 +60,12 @@ function TodoistPlugin:init()
 
     self.ui.menu:registerToMainMenu(self)
 
-    -- Start notification scheduler if the user has opted in
-    if self.settings:isTrue("notifications_enabled") then
+    -- Restore notifications if they were running in the previous context
+    -- (class-level flag set by onCloseWidget, same pattern as readtimer.koplugin),
+    -- or start fresh if the user has opted in via settings.
+    if TodoistPlugin._restore_notifications
+        or self.settings:isTrue("notifications_enabled") then
+        TodoistPlugin._restore_notifications = false
         self.notifications:start()
     end
 end
@@ -117,9 +123,22 @@ end
 
 -- ── Lifecycle ─────────────────────────────────────────────────────────────────
 
+--- Save notification state to a class-level flag before teardown so the next
+--- context's init() (Reader after FileManager, or vice-versa) can restore it.
+--- Mirrors the pattern used by readtimer.koplugin.
 function TodoistPlugin:onCloseWidget()
-    -- Cancel all scheduled callbacks when the plugin is torn down
+    TodoistPlugin._restore_notifications =
+        self.notifications ~= nil and self.notifications:isEnabled()
     self.notifications:stop()
+end
+
+--- Re-arm the sweep after the device wakes from sleep.
+--- UIManager's monotonic clock pauses during suspend, so any pending callback
+--- may fire late or not at all. Delegates to Notifications:onResume().
+function TodoistPlugin:onResume()
+    if self.notifications then
+        self.notifications:onResume()
+    end
 end
 
 return TodoistPlugin
