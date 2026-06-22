@@ -145,6 +145,19 @@ function SettingsWidget:_render()
         end,
     })
 
+    table.insert(items, { text = string.rep("─", 30), dim = true, callback = function() end })
+
+    table.insert(items, {
+        text     = _("About"),
+        callback = function()
+            local version = self.plugin.version or "1"
+            UIManager:show(InfoMessage:new{
+                text    = _("Todoist Plugin for KOReader\nVersion: ") .. tostring(version),
+                timeout = 5,
+            })
+        end,
+    })
+
     local title = "Todoist Settings"
     if self._menu then
         self._menu:switchItemTable(title, items, 1)
