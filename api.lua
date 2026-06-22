@@ -124,17 +124,18 @@ function Api:getProjects()
         if not data then return nil, err end
 
         if type(data) == "table" then
-            if data.results then
-                for _, p in ipairs(data.results) do
-                    table.insert(all_projects, p)
+            local items = data.results or data.projects or data
+            if type(items) == "table" then
+                for _, p in ipairs(items) do
+                    if type(p) == "table" and p.id then
+                        table.insert(all_projects, p)
+                    end
                 end
-                cursor = data.next_cursor
-            else
-                -- Fallback: plain array (Todoist REST API style)
-                for _, p in ipairs(data) do
-                    table.insert(all_projects, p)
-                end
-                break
+            end
+            
+            cursor = data.next_cursor
+            if type(cursor) ~= "string" then
+                cursor = nil
             end
         else
             -- If the API doesn't return the expected format, we must abort safely

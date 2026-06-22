@@ -100,7 +100,7 @@ function TaskStore:setProjects(projects_list)
     local projects_map = {}
     for _, p in ipairs(projects_list) do
         local name = p.name
-        if p.is_inbox_project then
+        if p.is_inbox_project == true then
             name = "Inbox"
         end
         projects_map[tostring(p.id)] = name
