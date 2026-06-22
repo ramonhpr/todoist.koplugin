@@ -109,6 +109,34 @@ function Api:closeTask(task_id)
     return self:_request("POST", "/tasks/" .. tostring(task_id) .. "/close")
 end
 
+-- Returns (projects_array, nil) or (nil, err_string).
+-- API v1 uses a dedicated projects endpoint that returns a paginated envelope.
+function Api:getProjects()
+    local all_projects = {}
+    local cursor = nil
+
+    repeat
+        local url = "/projects"
+        if cursor and cursor ~= "" then
+            url = url .. "?cursor=" .. tostring(cursor)
+        end
+        local data, err = self:_request("GET", url)
+        if not data then return nil, err end
+
+        if type(data) == "table" and data.results then
+            for _, p in ipairs(data.results) do
+                table.insert(all_projects, p)
+            end
+            cursor = data.next_cursor
+        else
+            -- If the API doesn't return the expected format, we must abort safely
+            break
+        end
+    until not cursor or cursor == ""
+
+    return all_projects, nil
+end
+
 -- Quick connectivity / token sanity check.
 function Api:testConnection()
     local data, err = self:getTodayTasks()

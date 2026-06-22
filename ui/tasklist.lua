@@ -36,34 +36,41 @@ function TaskListWidget:new(opts)
 end
 
 --- Decide whether to show cached data or fetch fresh, then render.
-function TaskListWidget:refresh()
+function TaskListWidget:refresh(explicit)
     local tasks   = self.task_store:getTasks()
     local valid   = self.task_store:isCacheValid()
     local online  = NetworkMgr:isConnected()
 
-    if valid and not online then
+    if valid and not online and not explicit then
         -- Fresh cache, offline — show it
         self:_render(tasks, true)
-    elseif (not valid or #tasks == 0) and not online then
+    elseif (not valid or #tasks == 0) and not online and not explicit then
         -- Stale / empty + offline — show whatever we have with a staleness warning
         self:_render(tasks, true)
-    elseif valid and online then
+    elseif valid and online and not explicit then
         -- Fresh cache + online — show immediately, refresh in background
         self:_render(tasks, false)
-        self:_fetchAndRender(true)
+        self:_fetchAndRender(true, explicit)
     else
-        -- Stale / empty + online — block on fetch
-        self:_fetchAndRender(false)
+        -- Stale / empty + online or explicit refresh — block on fetch
+        self:_fetchAndRender(false, explicit)
     end
 end
 
 -- ── Private: networking ───────────────────────────────────────────────────────
 
-function TaskListWidget:_fetchAndRender(background)
+function TaskListWidget:_fetchAndRender(background, explicit)
     if not background then
         UIManager:show(InfoMessage:new{ text = _("Syncing tasks…"), timeout = 2 })
     end
     NetworkMgr:runWhenConnected(function()
+        if explicit or not self.task_store:hasProjects() then
+            local projects, err = self.api:getProjects()
+            if projects then
+                self.task_store:setProjects(projects)
+            end
+        end
+
         local tasks, err = self.api:getTodayTasks()
         if tasks then
             self.task_store:setTasks(tasks)
@@ -117,9 +124,39 @@ function TaskListWidget:_render(tasks, from_cache)
                 if h then due_str = "  " .. h .. ":" .. m end
             end
             local pending_mark = task.sync_pending and "  ⚠" or ""
-            local text = prio .. (task.content or "?") .. due_str .. pending_mark
-            -- Truncate long titles so they fit one line on a Kindle screen
-            if #text > 78 then text = text:sub(1, 75) .. "…" end
+            local title = task.content or "?"
+            local project_name = self.task_store:getProjectName(task.project_id)
+            local proj_label = project_name and ("  [" .. project_name .. "]") or ""
+            
+            -- Limit string length to 78 chars
+            local max_len = 78
+            local extra = prio .. due_str .. pending_mark
+            
+            if #extra + #title + #proj_label > max_len then
+                -- Truncate title first, but leave at least 15 chars for it if possible
+                local min_title_len = 15
+                local avail_for_title = max_len - #extra - #proj_label
+                if avail_for_title < min_title_len then
+                    -- Project label is so long that title is squeezed. Truncate project label too.
+                    avail_for_title = min_title_len
+                    local max_proj_len = max_len - #extra - avail_for_title
+                    -- "  [...]" requires at least 5 chars (spaces + brackets), so max_proj_len must be > 5
+                    if max_proj_len > 5 then
+                        local proj_inner_len = max_proj_len - 5 -- Subtract spaces and brackets
+                        project_name = project_name:sub(1, proj_inner_len - 1) .. "…"
+                        proj_label = "  [" .. project_name .. "]"
+                    else
+                        proj_label = ""
+                        avail_for_title = max_len - #extra
+                    end
+                end
+                
+                if #title > avail_for_title then
+                    title = title:sub(1, avail_for_title - 1) .. "…"
+                end
+            end
+            
+            local text = prio .. title .. proj_label .. due_str .. pending_mark
 
             table.insert(items, {
                 text     = text,
@@ -134,7 +171,7 @@ function TaskListWidget:_render(tasks, from_cache)
     table.insert(items, { text = string.rep("─", 30), dim = true, callback = function() end })
     table.insert(items, {
         text     = _("↻  Refresh"),
-        callback = function() self:refresh() end,
+        callback = function() self:refresh(true) end,
     })
     table.insert(items, {
         text     = _("⚙  Settings"),
@@ -167,7 +204,7 @@ function TaskListWidget:_renderError(err)
 
     local items = {
         { text = msg, dim = true, callback = function() end },
-        { text = _("↺  Retry"),    callback = function() self:refresh() end },
+        { text = _("↺  Retry"),    callback = function() self:refresh(true) end },
         { text = _("⚙  Settings"), callback = function() self.on_settings() end },
     }
     self:_showOrUpdate("Todoist — Error", items)

@@ -25,6 +25,7 @@ function TaskStore:new(opts)
     o.settings            = opts.settings                     -- user prefs (token, TTL, etc.) — read-only here
     o._cache              = LuaSettings:open(opts.cache_path) -- dedicated cache file
     o.tasks               = {}                                -- visible task list
+    o.projects            = {}                                -- cached projects map [id] = name
     o.pending_completions = {}                                -- [task_id] = { task, orig_index }
     o.notified_tasks      = {}                                -- [task_id] = true  (session-scoped)
     o.last_sync_time      = 0
@@ -45,6 +46,10 @@ function TaskStore:_load()
     -- _cache is already loaded by LuaSettings:open(); just read from it.
     local tasks         = self._cache:readSetting("tasks")
     self.tasks          = type(tasks) == "table" and tasks or {}
+    
+    local projects      = self._cache:readSetting("projects")
+    self.projects       = type(projects) == "table" and projects or {}
+
     self.last_sync_time = tonumber(self._cache:readSetting("timestamp")) or 0
 end
 
@@ -83,6 +88,31 @@ end
 
 function TaskStore:getTasks()
     return self.tasks
+end
+
+-- ── Projects management (SPEC-005) ───────────────────────────────────────────
+
+function TaskStore:hasProjects()
+    return next(self.projects) ~= nil
+end
+
+function TaskStore:setProjects(projects_list)
+    local projects_map = {}
+    for _, p in ipairs(projects_list) do
+        local name = p.name
+        if p.is_inbox_project then
+            name = "Inbox"
+        end
+        projects_map[p.id] = name
+    end
+    self._cache:saveSetting("projects", projects_map)
+    self._cache:flush()
+    self.projects = projects_map
+end
+
+function TaskStore:getProjectName(project_id)
+    if not project_id or not self.projects then return nil end
+    return self.projects[project_id]
 end
 
 -- ── Optimistic completion (SPEC-004) ─────────────────────────────────────────
@@ -154,10 +184,12 @@ end
 
 function TaskStore:clearCache()
     self.tasks               = {}
+    self.projects            = {}
     self.last_sync_time      = 0
     self.pending_completions = {}
     self.notified_tasks      = {}
     self._cache:delSetting("tasks")
+    self._cache:delSetting("projects")
     self._cache:delSetting("timestamp")
     self._cache:flush()
 end
