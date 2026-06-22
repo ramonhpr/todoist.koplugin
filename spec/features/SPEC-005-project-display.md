@@ -1,7 +1,7 @@
 ---
 id: SPEC-005
 title: Project Display on Task Rows
-status: DRAFT
+status: DONE
 created: 2026-06-16
 updated: 2026-06-16
 gate: G1
