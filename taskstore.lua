@@ -103,7 +103,7 @@ function TaskStore:setProjects(projects_list)
         if p.is_inbox_project then
             name = "Inbox"
         end
-        projects_map[p.id] = name
+        projects_map[tostring(p.id)] = name
     end
     self._cache:saveSetting("projects", projects_map)
     self._cache:flush()
@@ -112,7 +112,7 @@ end
 
 function TaskStore:getProjectName(project_id)
     if not project_id or not self.projects then return nil end
-    return self.projects[project_id]
+    return self.projects[tostring(project_id)]
 end
 
 -- ── Optimistic completion (SPEC-004) ─────────────────────────────────────────
