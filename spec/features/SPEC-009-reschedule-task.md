@@ -1,9 +1,9 @@
 ---
 id: SPEC-009
 title: Reschedule Task Action
-status: DRAFT
+status: INPROGRESS
 created: 2026-06-16
-updated: 2026-06-16
+updated: 2026-06-22
 gate: G1
 ---
 

@@ -231,31 +231,51 @@ end
 
 function TaskListWidget:_onTaskTap(task)
     -- Guard against double-tap opening two dialogs
-    if self._completing == task.id then return end
+    if self._processing_task == task.id then return end
 
     local short = task.content or ""
     if #short > 52 then short = short:sub(1, 49) .. "…" end
 
-    UIManager:show(ConfirmBox:new{
-        text        = "Complete this task?\n\n" .. short,
-        ok_text     = _("Complete"),
-        cancel_text = _("Cancel"),
-        ok_callback = function()
-            self:_completeTask(task)
-        end,
-    })
+    local items = {
+        {
+            text = _("Complete"),
+            callback = function()
+                self:_completeTask(task)
+            end,
+        },
+        {
+            text = _("Reschedule"),
+            callback = function()
+                self:_showRescheduleMenu(task)
+            end,
+        },
+        {
+            text = _("Cancel"),
+            callback = function() end, -- Menu naturally closes on selection
+        }
+    }
+
+    local action_menu = Menu:new{
+        title         = short,
+        item_table    = items,
+        width         = Screen:getWidth(),
+        height        = Screen:getHeight(),
+        is_borderless = true,
+        is_popout     = false,
+    }
+    UIManager:show(action_menu)
 end
 
 function TaskListWidget:_completeTask(task)
-    if self._completing == task.id then return end
-    self._completing = task.id
+    if self._processing_task == task.id then return end
+    self._processing_task = task.id
 
     -- Optimistic removal (SPEC-004 Req 2)
     self.task_store:removeTask(task.id)
     self:_render(self.task_store:getTasks(), false)
 
     local function finish(success, err)
-        self._completing = nil
+        self._processing_task = nil
         if success then
             self.task_store:confirmCompletion(task.id)
         elseif err == "http_error:404" then
@@ -285,7 +305,96 @@ function TaskListWidget:_completeTask(task)
             text    = _("Offline — completion will sync when connected."),
             timeout = 3,
         })
-        self._completing = nil
+        self._processing_task = nil
+    end
+end
+
+function TaskListWidget:_showRescheduleMenu(task)
+    local items = {
+        {
+            text = _("Tomorrow"),
+            callback = function() self:_rescheduleTask(task, "tomorrow", false) end,
+        },
+        {
+            text = _("Later this week"),
+            callback = function() self:_rescheduleTask(task, "in 3 days", false) end,
+        },
+        {
+            text = _("This weekend"),
+            callback = function() self:_rescheduleTask(task, "this saturday", false) end,
+        },
+        {
+            text = _("Next week"),
+            callback = function() self:_rescheduleTask(task, "next monday", false) end,
+        },
+    }
+
+    if task.due and task.due.is_recurring == true then
+        table.insert(items, {
+            text = _("Postpone"),
+            callback = function() self:_rescheduleTask(task, nil, true) end,
+        })
+    end
+
+    table.insert(items, { text = string.rep("─", 30), dim = true, callback = function() end })
+    table.insert(items, {
+        text = _("Cancel"),
+        callback = function() end,
+    })
+
+    local short = task.content or ""
+    if #short > 52 then short = short:sub(1, 49) .. "…" end
+
+    local menu = Menu:new{
+        title         = "Reschedule: " .. short,
+        item_table    = items,
+        width         = Screen:getWidth(),
+        height        = Screen:getHeight(),
+        is_borderless = true,
+        is_popout     = false,
+    }
+    UIManager:show(menu)
+end
+
+function TaskListWidget:_rescheduleTask(task, due_string, is_postpone)
+    if self._processing_task == task.id then return end
+
+    if not NetworkMgr:isConnected() then
+        UIManager:show(InfoMessage:new{
+            text    = _("Offline — rescheduling requires a network connection."),
+            timeout = 3,
+        })
+        return
+    end
+
+    self._processing_task = task.id
+    self.task_store:removeTask(task.id)
+    self:_render(self.task_store:getTasks(), false)
+
+    local function finish(success, err)
+        self._processing_task = nil
+        if success then
+            self.task_store:confirmCompletion(task.id)
+        else
+            self.task_store:restoreTask(task.id)
+            self:_render(self.task_store:getTasks(), false)
+            UIManager:show(ConfirmBox:new{
+                text        = 'Could not reschedule\n"' .. (task.content or "?") .. '"\n\n' .. tostring(err or ""),
+                ok_text     = _("Retry"),
+                cancel_text = _("Dismiss"),
+                ok_callback = function()
+                    self:_rescheduleTask(task, due_string, is_postpone)
+                end,
+            })
+        end
+    end
+
+    if is_postpone then
+        local ok, err = self.api:closeTask(task.id)
+        finish(ok, err)
+    else
+        local ok, err = self.api:updateTask(task.id, { due_string = due_string })
+        finish(ok, err)
     end
 end
 

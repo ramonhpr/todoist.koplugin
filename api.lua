@@ -109,6 +109,11 @@ function Api:closeTask(task_id)
     return self:_request("POST", "/tasks/" .. tostring(task_id) .. "/close")
 end
 
+-- Returns (true, nil) on success or (nil, err_string) on failure.
+function Api:updateTask(task_id, payload)
+    return self:_request("POST", "/tasks/" .. tostring(task_id), payload)
+end
+
 -- Returns (projects_array, nil) or (nil, err_string).
 -- API v1 uses a dedicated projects endpoint that returns a paginated envelope.
 function Api:getProjects()
