@@ -240,26 +240,31 @@ function TaskListWidget:_onTaskTap(task)
     local short = task.content or ""
     if #short > 52 then short = short:sub(1, 49) .. "…" end
 
+    local action_menu
     local items = {
         {
             text = _("Complete"),
             callback = function()
+                UIManager:close(action_menu)
                 self:_completeTask(task)
             end,
         },
         {
             text = _("Reschedule"),
             callback = function()
+                UIManager:close(action_menu)
                 self:_showRescheduleMenu(task)
             end,
         },
         {
             text = _("Cancel"),
-            callback = function() end, -- Menu naturally closes on selection
+            callback = function()
+                UIManager:close(action_menu)
+            end,
         }
     }
 
-    local action_menu = Menu:new{
+    action_menu = Menu:new{
         title         = short,
         item_table    = items,
         width         = Screen:getWidth(),
@@ -314,42 +319,43 @@ function TaskListWidget:_completeTask(task)
 end
 
 function TaskListWidget:_showRescheduleMenu(task)
+    local menu
     local items = {
         {
             text = _("Tomorrow"),
-            callback = function() self:_rescheduleTask(task, "tomorrow", false) end,
+            callback = function() UIManager:close(menu); self:_rescheduleTask(task, "tomorrow", false) end,
         },
         {
             text = _("Later this week"),
-            callback = function() self:_rescheduleTask(task, "in 3 days", false) end,
+            callback = function() UIManager:close(menu); self:_rescheduleTask(task, "in 3 days", false) end,
         },
         {
             text = _("This weekend"),
-            callback = function() self:_rescheduleTask(task, "this saturday", false) end,
+            callback = function() UIManager:close(menu); self:_rescheduleTask(task, "this saturday", false) end,
         },
         {
             text = _("Next week"),
-            callback = function() self:_rescheduleTask(task, "next monday", false) end,
+            callback = function() UIManager:close(menu); self:_rescheduleTask(task, "next monday", false) end,
         },
     }
 
     if task.due and task.due.is_recurring == true then
         table.insert(items, {
             text = _("Postpone"),
-            callback = function() self:_rescheduleTask(task, nil, true) end,
+            callback = function() UIManager:close(menu); self:_rescheduleTask(task, nil, true) end,
         })
     end
 
     table.insert(items, { text = string.rep("─", 30), dim = true, callback = function() end })
     table.insert(items, {
         text = _("Cancel"),
-        callback = function() end,
+        callback = function() UIManager:close(menu) end,
     })
 
     local short = task.content or ""
     if #short > 52 then short = short:sub(1, 49) .. "…" end
 
-    local menu = Menu:new{
+    menu = Menu:new{
         title         = "Reschedule: " .. short,
         item_table    = items,
         width         = Screen:getWidth(),
