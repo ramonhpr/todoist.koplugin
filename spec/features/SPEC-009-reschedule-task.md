@@ -1,7 +1,7 @@
 ---
 id: SPEC-009
 title: Reschedule Task Action
-status: INPROGRESS
+status: DONE
 created: 2026-06-16
 updated: 2026-06-22
 gate: G1
@@ -49,7 +49,7 @@ A rescheduled task ceases to match Todoist's `today` filter and must be removed 
 
 4. **Postpone option visibility**: The **Postpone** option **must** appear in the reschedule submenu if and only if the tapped task has `due.is_recurring == true`; it **must not** appear for non-recurring tasks.
 
-5. **Submenu cancel**: The reschedule submenu **must** provide a way to dismiss it (e.g. a **Back** or **Cancel** entry, or the hardware back key) that returns the user to the task list without modifying any task.
+5. **Submenu cancel**: The reschedule submenu **must** provide a way to dismiss it (e.g. a **Back** or **** entry, or the hardware back key) that returns the user to the task list without modifying any task.
 
 6. **due_string mapping**: When the user selects a preset, the plugin **must** send the following `due_string` values to the API: Tomorrow → `"tomorrow"`, Later this week → `"in 3 days"`, This weekend → `"this saturday"`, Next week → `"next monday"`.
 
