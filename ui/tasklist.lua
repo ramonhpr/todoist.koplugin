@@ -119,13 +119,9 @@ function TaskListWidget:_render(tasks, from_cache)
         for _, task in ipairs(sorted) do
             local prio = PRIO_PREFIX[task.priority] or ""
             local due_str = ""
-            if task.due then
-                if task.due.datetime then
-                    local h, m = task.due.datetime:match("T(%d%d):(%d%d)")
-                    if h then due_str = "  " .. h .. ":" .. m end
-                elseif task.due.date then
-                    due_str = "  " .. task.due.date
-                end
+            if task.due and task.due.datetime then
+                local h, m = task.due.datetime:match("T(%d%d):(%d%d)")
+                if h then due_str = "  " .. h .. ":" .. m end
             end
             local pending_mark = task.sync_pending and "  ⚠" or ""
             local title = task.content or "?"
