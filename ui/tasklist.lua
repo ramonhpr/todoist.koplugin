@@ -197,13 +197,7 @@ function TaskListWidget:_render(tasks, from_cache)
                 title = title:sub(1, max_title - 1) .. "…"
             end
 
-            -- ── Main row: priority + title + pending indicator ──
-            table.insert(items, {
-                text     = prio .. title .. pending_mark,
-                callback = function() self:_onTaskTap(task) end,
-            })
-
-            -- ── Detail row: due time · project (shown below, dim) ──
+            -- ── Build detail line: due time · project ──
             local due_str = ""
             if task.due and task.due.datetime then
                 local h, m = task.due.datetime:match("T(%d%d):(%d%d)")
@@ -219,13 +213,16 @@ function TaskListWidget:_render(tasks, from_cache)
                 table.insert(detail_parts, "#" .. project_name)
             end
 
+            local main_text = prio .. title .. pending_mark
             if #detail_parts > 0 then
-                table.insert(items, {
-                    text     = "    " .. table.concat(detail_parts, "   ·   "),
-                    dim      = true,
-                    callback = function() self:_onTaskTap(task) end,
-                })
+                main_text = main_text .. "\n    " .. table.concat(detail_parts, "   ·   ")
             end
+
+            table.insert(items, {
+                text     = main_text,
+                callback = function() self:_onTaskTap(task) end,
+            })
+
         end
     end
 
