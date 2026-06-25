@@ -187,53 +187,45 @@ function TaskListWidget:_render(tasks, from_cache)
         })
     else
         for _, task in ipairs(sorted) do
-            local prio = PRIO_PREFIX[task.priority] or ""
+            local prio         = PRIO_PREFIX[task.priority] or ""
+            local pending_mark = task.sync_pending and "  ⚠" or ""
+            local title        = task.content or "?"
+
+            -- Truncate title if too long (simpler now that time/project are on their own row)
+            local max_title = 72 - #prio - #pending_mark
+            if #title > max_title then
+                title = title:sub(1, max_title - 1) .. "…"
+            end
+
+            -- ── Main row: priority + title + pending indicator ──
+            table.insert(items, {
+                text     = prio .. title .. pending_mark,
+                callback = function() self:_onTaskTap(task) end,
+            })
+
+            -- ── Detail row: due time · project (shown below, dim) ──
             local due_str = ""
             if task.due and task.due.datetime then
                 local h, m = task.due.datetime:match("T(%d%d):(%d%d)")
-                if h then due_str = "  " .. h .. ":" .. m end
+                if h then due_str = h .. ":" .. m end
             end
-            local pending_mark = task.sync_pending and "  ⚠" or ""
-            local title = task.content or "?"
             local project_name = self.task_store:getProjectName(task.project_id)
-            local proj_label = project_name and ("  [" .. project_name .. "]") or ""
-            
-            -- Limit string length to 78 chars
-            local max_len = 78
-            local extra = prio .. due_str .. pending_mark
-            
-            if #extra + #title + #proj_label > max_len then
-                -- Truncate title first, but leave at least 15 chars for it if possible
-                local min_title_len = 15
-                local avail_for_title = max_len - #extra - #proj_label
-                if avail_for_title < min_title_len then
-                    -- Project label is so long that title is squeezed. Truncate project label too.
-                    avail_for_title = min_title_len
-                    local max_proj_len = max_len - #extra - avail_for_title
-                    -- "  [...]" requires at least 5 chars (spaces + brackets), so max_proj_len must be > 5
-                    if max_proj_len > 5 then
-                        local proj_inner_len = max_proj_len - 5 -- Subtract spaces and brackets
-                        project_name = project_name:sub(1, proj_inner_len - 1) .. "…"
-                        proj_label = "  [" .. project_name .. "]"
-                    else
-                        proj_label = ""
-                        avail_for_title = max_len - #extra
-                    end
-                end
-                
-                if #title > avail_for_title then
-                    title = title:sub(1, avail_for_title - 1) .. "…"
-                end
-            end
-            
-            local text = prio .. title .. proj_label .. due_str .. pending_mark
 
-            table.insert(items, {
-                text     = text,
-                callback = function()
-                    self:_onTaskTap(task)
-                end,
-            })
+            local detail_parts = {}
+            if due_str ~= "" then
+                table.insert(detail_parts, "⏱ " .. due_str)
+            end
+            if project_name then
+                table.insert(detail_parts, "#" .. project_name)
+            end
+
+            if #detail_parts > 0 then
+                table.insert(items, {
+                    text     = "    " .. table.concat(detail_parts, "   ·   "),
+                    dim      = true,
+                    callback = function() self:_onTaskTap(task) end,
+                })
+            end
         end
     end
 
