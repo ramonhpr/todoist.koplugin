@@ -64,8 +64,8 @@ function TaskStore:setTasks(tasks)
         if self.notified_tasks[new_task.id] then
             local old = self:_findById(new_task.id)
             if old then
-                local old_dt = old.due and old.due.datetime
-                local new_dt = new_task.due and new_task.due.datetime
+                local old_dt = old.due and old.due.date
+                local new_dt = new_task.due and new_task.due.date
                 if old_dt ~= new_dt then
                     self.notified_tasks[new_task.id] = nil
                 end

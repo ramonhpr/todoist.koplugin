@@ -123,8 +123,8 @@ end
 
 --- SPEC-007 Req 2: Date sort — time-specific ascending, then all-day, ties by priority desc.
 local function sort_date(a, b)
-    local adt = a.due and a.due.datetime
-    local bdt = b.due and b.due.datetime
+    local adt = a.due and a.due.date
+    local bdt = b.due and b.due.date
     local r = cmp_datetime(adt, bdt)
     if r ~= nil then return r end
     return (a.priority or 1) > (b.priority or 1)
@@ -135,8 +135,8 @@ local function sort_priority(a, b)
     local ap = a.priority or 1
     local bp = b.priority or 1
     if ap ~= bp then return ap > bp end
-    local adt = a.due and a.due.datetime
-    local bdt = b.due and b.due.datetime
+    local adt = a.due and a.due.date
+    local bdt = b.due and b.due.date
     local r = cmp_datetime(adt, bdt)
     if r ~= nil then return r end
     return false
@@ -151,8 +151,8 @@ function TaskListWidget:_sort_project(a, b, task_store)
     local ak = proj_key(a)
     local bk = proj_key(b)
     if ak ~= bk then return ak < bk end
-    local adt = a.due and a.due.datetime
-    local bdt = b.due and b.due.datetime
+    local adt = a.due and a.due.date
+    local bdt = b.due and b.due.date
     local r = cmp_datetime(adt, bdt)
     if r ~= nil then return r end
     return false
@@ -199,8 +199,8 @@ function TaskListWidget:_render(tasks, from_cache)
 
             -- ── Build detail line: due time · project ──
             local due_str = ""
-            if task.due and task.due.datetime then
-                local h, m = task.due.datetime:match("T(%d%d):(%d%d)")
+            if task.due and task.due.date then
+                local h, m = task.due.date:match("T(%d%d):(%d%d)")
                 if h then due_str = h .. ":" .. m end
             end
             local project_name = self.task_store:getProjectName(task.project_id)

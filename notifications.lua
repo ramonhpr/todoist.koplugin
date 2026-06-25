@@ -93,8 +93,8 @@ function Notifications:scheduleTaskNotifications(tasks)
     local stagger   = 0
 
     for _, task in ipairs(tasks) do
-        if task.due and task.due.datetime then
-            local due_ts = self:_parseIso(task.due.datetime)
+        if task.due and task.due.date then
+            local due_ts = self:_parseIso(task.due.date)
             if due_ts then
                 local notify_ts = due_ts - lead_secs
                 local delay     = notify_ts - now
