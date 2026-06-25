@@ -1,9 +1,9 @@
 --[[
-    Today's task list widget (SPEC-001, SPEC-004).
+    Today's task list widget (SPEC-001, SPEC-004, SPEC-007).
 
     Wraps a KOReader Menu widget and handles:
       • Online / offline / cached rendering with a sync-age banner
-      • Sorting (time-specific first, then by priority)
+      • Sorting: three user-selectable modes (date / priority / project) (SPEC-007)
       • Per-task complete action with optimistic UI update and rollback
       • Error state with Retry button
 --]]
@@ -22,7 +22,23 @@ local PRIO_PREFIX = { [1] = "[!!!] ", [2] = "[!! ] ", [3] = "[ ! ] ", [4] = "" }
 local TaskListWidget = {}
 TaskListWidget.__index = TaskListWidget
 
+-- Valid sort modes in cycle order (SPEC-007 Req 7)
+local SORT_MODES   = { "date", "priority", "project" }
+local SORT_LABELS  = { date = "Date", priority = "Priority", project = "Project" }
+
 function TaskListWidget:new(opts)
+    -- SPEC-007 Req 1: read sort_mode; default to "date" when absent or invalid
+    local raw_mode = opts.settings:readSetting("sort_mode")
+    local mode = "date"
+    for _, m in ipairs(SORT_MODES) do
+        if raw_mode == m then mode = m; break end
+    end
+    if raw_mode ~= nil and raw_mode ~= mode then
+        -- Overwrite invalid value (SPEC-007 edge-case)
+        opts.settings:saveSetting("sort_mode", mode)
+        opts.settings:flush()
+    end
+
     local o = setmetatable({
         plugin        = opts.plugin,
         task_store    = opts.task_store,
@@ -30,6 +46,7 @@ function TaskListWidget:new(opts)
         notifications = opts.notifications,
         settings      = opts.settings,
         on_settings   = opts.on_settings,
+        sort_mode     = mode,
         _menu         = nil,
     }, self)
     return o
@@ -93,19 +110,72 @@ end
 
 -- ── Private: rendering ────────────────────────────────────────────────────────
 
-function TaskListWidget:_render(tasks, from_cache)
-    -- Sort: time-specific tasks first (ascending), then by priority descending
+-- ── Private: sort helpers (SPEC-007) ─────────────────────────────────────────
+
+--- Compare two optional datetime strings for ascending order.
+--- nil (no due time) sorts after any real value.
+local function cmp_datetime(adt, bdt)
+    if adt and not bdt then return true  end
+    if not adt and bdt  then return false end
+    if adt and bdt and adt ~= bdt then return adt < bdt end
+    return nil  -- equal
+end
+
+--- SPEC-007 Req 2: Date sort — time-specific ascending, then all-day, ties by priority desc.
+local function sort_date(a, b)
+    local adt = a.due and a.due.datetime
+    local bdt = b.due and b.due.datetime
+    local r = cmp_datetime(adt, bdt)
+    if r ~= nil then return r end
+    return (a.priority or 1) > (b.priority or 1)
+end
+
+--- SPEC-007 Req 3: Priority sort — priority desc, ties by due time asc (no time = last).
+local function sort_priority(a, b)
+    local ap = a.priority or 1
+    local bp = b.priority or 1
+    if ap ~= bp then return ap > bp end
+    local adt = a.due and a.due.datetime
+    local bdt = b.due and b.due.datetime
+    local r = cmp_datetime(adt, bdt)
+    if r ~= nil then return r end
+    return false
+end
+
+--- SPEC-007 Req 4/5: Project sort — project name asc (case-insensitive), ties by due time asc.
+function TaskListWidget:_sort_project(a, b, task_store)
+    local function proj_key(task)
+        local name = task_store:getProjectName(task.project_id)
+        return (name or ""):lower()
+    end
+    local ak = proj_key(a)
+    local bk = proj_key(b)
+    if ak ~= bk then return ak < bk end
+    local adt = a.due and a.due.datetime
+    local bdt = b.due and b.due.datetime
+    local r = cmp_datetime(adt, bdt)
+    if r ~= nil then return r end
+    return false
+end
+
+function TaskListWidget:_sortTasks(tasks)
     local sorted = {}
     for _, t in ipairs(tasks) do table.insert(sorted, t) end
-    table.sort(sorted, function(a, b)
-        local adt = a.due and a.due.datetime
-        local bdt = b.due and b.due.datetime
-        if adt and not bdt then return true  end
-        if not adt and bdt then return false end
-        if adt and bdt and adt ~= bdt then return adt < bdt end
-        -- Higher priority number = lower priority in Todoist (P1=4, P4=1)
-        return (a.priority or 1) > (b.priority or 1)
-    end)
+    local mode = self.sort_mode
+    if mode == "priority" then
+        table.sort(sorted, sort_priority)
+    elseif mode == "project" then
+        local ts = self.task_store
+        table.sort(sorted, function(a, b) return self:_sort_project(a, b, ts) end)
+    else
+        -- "date" is the default (SPEC-007 Req 2)
+        table.sort(sorted, sort_date)
+    end
+    return sorted
+end
+
+function TaskListWidget:_render(tasks, from_cache)
+    local sorted = self:_sortTasks(tasks)
 
     local items = {}
 
@@ -169,6 +239,26 @@ function TaskListWidget:_render(tasks, from_cache)
 
     -- ── Footer actions ──
     table.insert(items, { text = string.rep("─", 30), dim = true, callback = function() end })
+    -- SPEC-007 Req 7/8/11: sort cycle button on task list only
+    table.insert(items, {
+        text = _("⇋  Sort: ") .. (SORT_LABELS[self.sort_mode] or self.sort_mode),
+        callback = function()
+            -- Advance to the next sort mode in cycle order
+            local next_mode = SORT_MODES[1]
+            for i, m in ipairs(SORT_MODES) do
+                if m == self.sort_mode then
+                    next_mode = SORT_MODES[(i % #SORT_MODES) + 1]
+                    break
+                end
+            end
+            self.sort_mode = next_mode
+            -- SPEC-007 Req 9: persist the new mode
+            self.settings:saveSetting("sort_mode", next_mode)
+            self.settings:flush()
+            -- SPEC-007 Req 8: immediately re-render in the new order
+            self:_render(self.task_store:getTasks(), from_cache)
+        end,
+    })
     table.insert(items, {
         text     = _("↻  Refresh"),
         callback = function() self:refresh(true) end,
@@ -178,12 +268,14 @@ function TaskListWidget:_render(tasks, from_cache)
         callback = function() self.on_settings() end,
     })
 
-    -- ── Title with optional cache banner ──
-    local title = "Todoist — Today"
+    -- ── Title with optional cache banner + sort mode (SPEC-007 Req 6) ──
+    local title
     if from_cache then
         local age_min = math.floor(self.task_store:getCacheAgeSeconds() / 60)
         local badge   = NetworkMgr:isConnected() and "" or "  ·  Offline"
-        title = "Todoist  (synced " .. age_min .. "m ago" .. badge .. ")"
+        title = "Todoist  (synced " .. age_min .. "m ago" .. badge .. ")  ·  by " .. (SORT_LABELS[self.sort_mode] or self.sort_mode)
+    else
+        title = "Todoist — Today  ·  by " .. (SORT_LABELS[self.sort_mode] or self.sort_mode)
     end
 
     self:_showOrUpdate(title, items)

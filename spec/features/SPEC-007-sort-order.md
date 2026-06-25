@@ -1,7 +1,7 @@
 ---
 id: SPEC-007
 title: Task List Sort Order
-status: DRAFT
+status: IN PROGRESS
 created: 2026-06-16
 updated: 2026-06-16
 gate: G1

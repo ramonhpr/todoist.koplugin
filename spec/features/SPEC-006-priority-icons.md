@@ -1,7 +1,7 @@
 ---
 id: SPEC-006
 title: Priority Icons on Task Rows
-status: DRAFT
+status: ABANDONED
 created: 2026-06-16
 updated: 2026-06-16
 gate: G1
