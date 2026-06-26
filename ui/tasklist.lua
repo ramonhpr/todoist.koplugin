@@ -8,34 +8,47 @@
       • Error state with Retry button
 --]]
 
-local ConfirmBox  = require("ui/widget/confirmbox")
-local InfoMessage = require("ui/widget/infomessage")
-local Menu        = require("ui/widget/menu")
-local NetworkMgr  = require("ui/network/manager")
-local Screen      = require("device").screen
-local UIManager   = require("ui/uimanager")
-local _           = require("gettext")
+local ConfirmBox       = require("ui/widget/confirmbox")
+local InfoMessage      = require("ui/widget/infomessage")
+local Menu             = require("ui/widget/menu")
+local NetworkMgr       = require("ui/network/manager")
+local Screen           = require("device").screen
+local UIManager        = require("ui/uimanager")
+local _                = require("gettext")
 
 -- Priority prefix shown before task title
-local PRIO_PREFIX = { [1] = "[!!!] ", [2] = "[!! ] ", [3] = "[ ! ] ", [4] = "" }
+local PRIO_PREFIX      = { [1] = "[!!!] ", [2] = "[!! ] ", [3] = "[ ! ] ", [4] = "" }
 
-local TaskListWidget = {}
+local TaskListWidget   = {}
 TaskListWidget.__index = TaskListWidget
 
 -- Valid sort modes in cycle order (SPEC-007 Req 7)
-local SORT_MODES   = { "date", "priority", "project" }
-local SORT_LABELS  = { date = "Date", priority = "Priority", project = "Project" }
+local SORT_MODES       = { "date", "priority", "project" }
+local SORT_LABELS      = { date = "Date", priority = "Priority", project = "Project" }
+
+-- Sort direction labels
+local DIR_LABELS       = { asc = "↑ Asc", desc = "↓ Desc" }
 
 function TaskListWidget:new(opts)
     -- SPEC-007 Req 1: read sort_mode; default to "date" when absent or invalid
     local raw_mode = opts.settings:readSetting("sort_mode")
     local mode = "date"
     for _, m in ipairs(SORT_MODES) do
-        if raw_mode == m then mode = m; break end
+        if raw_mode == m then
+            mode = m; break
+        end
     end
     if raw_mode ~= nil and raw_mode ~= mode then
         -- Overwrite invalid value (SPEC-007 edge-case)
         opts.settings:saveSetting("sort_mode", mode)
+        opts.settings:flush()
+    end
+
+    -- Read sort direction; default to "asc", reject any unrecognised value
+    local raw_dir = opts.settings:readSetting("sort_dir")
+    local dir = (raw_dir == "asc" or raw_dir == "desc") and raw_dir or "asc"
+    if raw_dir ~= nil and raw_dir ~= dir then
+        opts.settings:saveSetting("sort_dir", dir)
         opts.settings:flush()
     end
 
@@ -47,6 +60,7 @@ function TaskListWidget:new(opts)
         settings      = opts.settings,
         on_settings   = opts.on_settings,
         sort_mode     = mode,
+        sort_dir      = dir,
         _menu         = nil,
     }, self)
     return o
@@ -54,9 +68,9 @@ end
 
 --- Decide whether to show cached data or fetch fresh, then render.
 function TaskListWidget:refresh(explicit)
-    local tasks   = self.task_store:getTasks()
-    local valid   = self.task_store:isCacheValid()
-    local online  = NetworkMgr:isConnected()
+    local tasks  = self.task_store:getTasks()
+    local valid  = self.task_store:isCacheValid()
+    local online = NetworkMgr:isConnected()
 
     if valid and not online and not explicit then
         -- Fresh cache, offline — show it
@@ -78,7 +92,7 @@ end
 
 function TaskListWidget:_fetchAndRender(background, explicit)
     if not background then
-        UIManager:show(InfoMessage:new{ text = _("Syncing tasks…"), timeout = 2 })
+        UIManager:show(InfoMessage:new { text = _("Syncing tasks…"), timeout = 2 })
     end
     NetworkMgr:runWhenConnected(function()
         if explicit or not self.task_store:hasProjects() then
@@ -97,7 +111,7 @@ function TaskListWidget:_fetchAndRender(background, explicit)
             local cached = self.task_store:getTasks()
             if #cached > 0 then
                 self:_render(cached, true)
-                UIManager:show(InfoMessage:new{
+                UIManager:show(InfoMessage:new {
                     text    = _("Sync failed — showing cached tasks."),
                     timeout = 3,
                 })
@@ -115,10 +129,10 @@ end
 --- Compare two optional datetime strings for ascending order.
 --- nil (no due time) sorts after any real value.
 local function cmp_datetime(adt, bdt)
-    if adt and not bdt then return true  end
-    if not adt and bdt  then return false end
+    if adt and not bdt then return true end
+    if not adt and bdt then return false end
     if adt and bdt and adt ~= bdt then return adt < bdt end
-    return nil  -- equal
+    return nil -- equal
 end
 
 --- SPEC-007 Req 2: Date sort — time-specific ascending, then all-day, ties by priority desc.
@@ -171,6 +185,13 @@ function TaskListWidget:_sortTasks(tasks)
         -- "date" is the default (SPEC-007 Req 2)
         table.sort(sorted, sort_date)
     end
+    -- Reverse the list for descending direction
+    if self.sort_dir == "desc" then
+        local n = #sorted
+        for i = 1, math.floor(n / 2) do
+            sorted[i], sorted[n - i + 1] = sorted[n - i + 1], sorted[i]
+        end
+    end
     return sorted
 end
 
@@ -192,7 +213,7 @@ function TaskListWidget:_render(tasks, from_cache)
             local title        = task.content or "?"
 
             -- Truncate title if too long (simpler now that time/project are on their own row)
-            local max_title = 72 - #prio - #pending_mark
+            local max_title    = 72 - #prio - #pending_mark
             if #title > max_title then
                 title = title:sub(1, max_title - 1) .. "…"
             end
@@ -222,7 +243,6 @@ function TaskListWidget:_render(tasks, from_cache)
                 text     = main_text,
                 callback = function() self:_onTaskTap(task) end,
             })
-
         end
     end
 
@@ -248,6 +268,17 @@ function TaskListWidget:_render(tasks, from_cache)
             self:_render(self.task_store:getTasks(), from_cache)
         end,
     })
+    -- Direction toggle: cycles between ascending and descending
+    table.insert(items, {
+        text = _("⇅  Direction: ") .. (DIR_LABELS[self.sort_dir] or self.sort_dir),
+        callback = function()
+            local next_dir = self.sort_dir == "asc" and "desc" or "asc"
+            self.sort_dir = next_dir
+            self.settings:saveSetting("sort_dir", next_dir)
+            self.settings:flush()
+            self:_render(self.task_store:getTasks(), from_cache)
+        end,
+    })
     table.insert(items, {
         text     = _("↻  Refresh"),
         callback = function() self:refresh(true) end,
@@ -257,14 +288,16 @@ function TaskListWidget:_render(tasks, from_cache)
         callback = function() self.on_settings() end,
     })
 
-    -- ── Title with optional cache banner + sort mode (SPEC-007 Req 6) ──
+    -- ── Title with optional cache banner + sort mode + direction (SPEC-007 Req 6) ──
+    local sort_label = (SORT_LABELS[self.sort_mode] or self.sort_mode)
+        .. " " .. (self.sort_dir == "desc" and "↓" or "↑")
     local title
     if from_cache then
         local age_min = math.floor(self.task_store:getCacheAgeSeconds() / 60)
         local badge   = NetworkMgr:isConnected() and "" or "  ·  Offline"
-        title = "Todoist  (synced " .. age_min .. "m ago" .. badge .. ")  ·  by " .. (SORT_LABELS[self.sort_mode] or self.sort_mode)
+        title         = "Todoist  (synced " .. age_min .. "m ago" .. badge .. ")  ·  by " .. sort_label
     else
-        title = "Todoist — Today  ·  by " .. (SORT_LABELS[self.sort_mode] or self.sort_mode)
+        title = "Todoist — Today  ·  by " .. sort_label
     end
 
     self:_showOrUpdate(title, items)
@@ -285,7 +318,7 @@ function TaskListWidget:_renderError(err)
 
     local items = {
         { text = msg, dim = true, callback = function() end },
-        { text = _("↺  Retry"),    callback = function() self:refresh(true) end },
+        { text = _("↺  Retry"), callback = function() self:refresh(true) end },
         { text = _("⚙  Settings"), callback = function() self.on_settings() end },
     }
     self:_showOrUpdate("Todoist — Error", items)
@@ -296,7 +329,7 @@ function TaskListWidget:_showOrUpdate(title, items)
     if self._menu then
         self._menu:switchItemTable(title, items, 1)
     else
-        self._menu = Menu:new{
+        self._menu = Menu:new {
             title         = title,
             item_table    = items,
             width         = Screen:getWidth(),
@@ -341,7 +374,7 @@ function TaskListWidget:_onTaskTap(task)
         }
     }
 
-    action_menu = Menu:new{
+    action_menu = Menu:new {
         title         = short,
         item_table    = items,
         width         = Screen:getWidth(),
@@ -371,7 +404,7 @@ function TaskListWidget:_completeTask(task)
             -- Rollback (SPEC-004 Req 5)
             self.task_store:restoreTask(task.id)
             self:_render(self.task_store:getTasks(), false)
-            UIManager:show(ConfirmBox:new{
+            UIManager:show(ConfirmBox:new {
                 text        = 'Could not complete\n"' .. (task.content or "?") .. '"\n\n' .. tostring(err or ""),
                 ok_text     = _("Retry"),
                 cancel_text = _("Dismiss"),
@@ -387,7 +420,7 @@ function TaskListWidget:_completeTask(task)
         finish(ok, err)
     else
         -- Offline: task stays removed optimistically, queued for retry (SPEC-004 Req 9)
-        UIManager:show(InfoMessage:new{
+        UIManager:show(InfoMessage:new {
             text    = _("Offline — completion will sync when connected."),
             timeout = 3,
         })
@@ -400,26 +433,36 @@ function TaskListWidget:_showRescheduleMenu(task)
     local items = {
         {
             text = _("Tomorrow"),
-            callback = function() UIManager:close(menu); self:_rescheduleTask(task, "tomorrow", false) end,
+            callback = function()
+                UIManager:close(menu); self:_rescheduleTask(task, "tomorrow", false)
+            end,
         },
         {
             text = _("Later this week"),
-            callback = function() UIManager:close(menu); self:_rescheduleTask(task, "in 3 days", false) end,
+            callback = function()
+                UIManager:close(menu); self:_rescheduleTask(task, "in 3 days", false)
+            end,
         },
         {
             text = _("This weekend"),
-            callback = function() UIManager:close(menu); self:_rescheduleTask(task, "this saturday", false) end,
+            callback = function()
+                UIManager:close(menu); self:_rescheduleTask(task, "this saturday", false)
+            end,
         },
         {
             text = _("Next week"),
-            callback = function() UIManager:close(menu); self:_rescheduleTask(task, "next monday", false) end,
+            callback = function()
+                UIManager:close(menu); self:_rescheduleTask(task, "next monday", false)
+            end,
         },
     }
 
     if task.due and task.due.is_recurring == true then
         table.insert(items, {
             text = _("Postpone"),
-            callback = function() UIManager:close(menu); self:_rescheduleTask(task, nil, true) end,
+            callback = function()
+                UIManager:close(menu); self:_rescheduleTask(task, nil, true)
+            end,
         })
     end
 
@@ -432,7 +475,7 @@ function TaskListWidget:_showRescheduleMenu(task)
     local short = task.content or ""
     if #short > 52 then short = short:sub(1, 49) .. "…" end
 
-    menu = Menu:new{
+    menu = Menu:new {
         title         = "Reschedule: " .. short,
         item_table    = items,
         width         = Screen:getWidth(),
@@ -447,7 +490,7 @@ function TaskListWidget:_rescheduleTask(task, due_string, is_postpone)
     if self._processing_task == task.id then return end
 
     if not NetworkMgr:isConnected() then
-        UIManager:show(InfoMessage:new{
+        UIManager:show(InfoMessage:new {
             text    = _("Offline — rescheduling requires a network connection."),
             timeout = 3,
         })
@@ -465,7 +508,7 @@ function TaskListWidget:_rescheduleTask(task, due_string, is_postpone)
         else
             self.task_store:restoreTask(task.id)
             self:_render(self.task_store:getTasks(), false)
-            UIManager:show(ConfirmBox:new{
+            UIManager:show(ConfirmBox:new {
                 text        = 'Could not reschedule\n"' .. (task.content or "?") .. '"\n\n' .. tostring(err or ""),
                 ok_text     = _("Retry"),
                 cancel_text = _("Dismiss"),
