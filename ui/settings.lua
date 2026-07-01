@@ -9,20 +9,20 @@
     Settings are persisted to LuaSettings immediately on change (no Save button).
 --]]
 
-local ConfirmBox  = require("ui/widget/confirmbox")
-local InfoMessage = require("ui/widget/infomessage")
-local InputDialog = require("ui/widget/inputdialog")
-local Menu        = require("ui/widget/menu")
-local Screen      = require("device").screen
-local UIManager   = require("ui/uimanager")
-local _           = require("gettext")
+local ConfirmBox       = require("ui/widget/confirmbox")
+local InfoMessage      = require("ui/widget/infomessage")
+local InputDialog      = require("ui/widget/inputdialog")
+local Menu             = require("ui/widget/menu")
+local Screen           = require("device").screen
+local UIManager        = require("ui/uimanager")
+local _                = require("gettext")
 
-local CACHE_TTL_OPTS = { 5, 15, 30, 60 }
-local LEAD_MINS_OPTS = { 0, 5, 10, 15, 30, 60 }
-local POLL_MINS_OPTS = { 1, 5, 10, 15, 30, 60 }
-local DISP_SECS_OPTS = { 5, 10, 15, 30, 60 }
+local CACHE_TTL_OPTS   = { 5, 15, 30, 60 }
+local LEAD_MINS_OPTS   = { 0, 5, 10, 15, 30, 60 }
+local POLL_MINS_OPTS   = { 1, 5, 10, 15, 30, 60 }
+local DISP_SECS_OPTS   = { 5, 10, 15, 30, 60 }
 
-local SettingsWidget = {}
+local SettingsWidget   = {}
 SettingsWidget.__index = SettingsWidget
 
 function SettingsWidget:new(opts)
@@ -41,21 +41,23 @@ end
 -- ── Private: rendering ────────────────────────────────────────────────────────
 
 function SettingsWidget:_render()
-    local s     = self.settings
-    local token = s:readSetting("api_token") or ""
-    local notif = s:isTrue("notifications_enabled")
-    local lead  = s:readSetting("notification_lead_minutes") or 0
-    local poll  = s:readSetting("notification_poll_minutes") or 5
-    local disp  = s:readSetting("notification_display_seconds") or 10
-    local ttl   = s:readSetting("cache_ttl_minutes") or 15
+    local s            = self.settings
+    local token        = s:readSetting("api_token") or ""
+    local notif        = s:isTrue("notifications_enabled")
+    local lead         = s:readSetting("notification_lead_minutes") or 0
+    local poll         = s:readSetting("notification_poll_minutes") or 5
+    local disp         = s:readSetting("notification_display_seconds") or 10
+    local ttl          = s:readSetting("cache_ttl_minutes") or 15
+    -- SPEC-010 Req 3: default true when key is absent
+    local show_overdue = s:readSetting("show_overdue") ~= false
 
     -- Mask token: show only last 4 chars
-    local token_disp = token ~= "" and ("••••" .. token:sub(-4)) or _("(not set)")
+    local token_disp   = token ~= "" and ("••••" .. token:sub(-4)) or _("(not set)")
 
-    local items = {}
+    local items        = {}
 
     -- ── API Token ──
-    local token_text = "API Token:  " .. token_disp
+    local token_text   = "API Token:  " .. token_disp
     if token == "" then
         token_text = token_text .. "  ← tap to set"
     end
@@ -130,13 +132,13 @@ function SettingsWidget:_render()
     table.insert(items, {
         text     = _("Clear cache"),
         callback = function()
-            UIManager:show(ConfirmBox:new{
+            UIManager:show(ConfirmBox:new {
                 text        = _("Clear the local task cache?"),
                 ok_text     = _("Clear"),
                 cancel_text = _("Cancel"),
                 ok_callback = function()
                     self.plugin.task_store:clearCache()
-                    UIManager:show(InfoMessage:new{
+                    UIManager:show(InfoMessage:new {
                         text    = _("Cache cleared."),
                         timeout = 2,
                     })
@@ -147,11 +149,23 @@ function SettingsWidget:_render()
 
     table.insert(items, { text = string.rep("─", 30), dim = true, callback = function() end })
 
+    -- ── Task display settings (SPEC-010) ──
+    table.insert(items, {
+        text     = "Show overdue tasks:  " .. (show_overdue and "Yes ✓" or "No"),
+        callback = function()
+            s:saveSetting("show_overdue", not show_overdue)
+            s:flush()
+            self:_render()
+        end,
+    })
+
+    table.insert(items, { text = string.rep("─", 30), dim = true, callback = function() end })
+
     table.insert(items, {
         text     = _("About"),
         callback = function()
             local version = self.plugin.version or "1"
-            UIManager:show(InfoMessage:new{
+            UIManager:show(InfoMessage:new {
                 text    = _("Todoist Plugin for KOReader\nVersion: ") .. tostring(version),
                 timeout = 5,
             })
@@ -162,7 +176,7 @@ function SettingsWidget:_render()
     if self._menu then
         self._menu:switchItemTable(title, items, 1)
     else
-        self._menu = Menu:new{
+        self._menu = Menu:new {
             title         = title,
             item_table    = items,
             width         = Screen:getWidth(),
@@ -178,12 +192,12 @@ end
 
 function SettingsWidget:_editToken()
     local dialog
-    dialog = InputDialog:new{
+    dialog = InputDialog:new {
         title       = _("Todoist API Token"),
         description = _("todoist.com/app/settings/integrations/developer"),
-        input       = "",        -- never pre-fill for security
+        input       = "", -- never pre-fill for security
         text_type   = "password",
-        buttons     = {{
+        buttons     = { {
             {
                 text     = _("Cancel"),
                 callback = function()
@@ -196,7 +210,7 @@ function SettingsWidget:_editToken()
                 callback         = function()
                     local new_token = dialog:getInputText()
                     if not new_token or new_token == "" then
-                        UIManager:show(InfoMessage:new{
+                        UIManager:show(InfoMessage:new {
                             text    = _("Token cannot be empty."),
                             timeout = 2,
                         })
@@ -209,23 +223,23 @@ function SettingsWidget:_editToken()
                     self.on_token_changed(new_token)
 
                     -- Live connection test (SPEC-003 Req 3)
-                    UIManager:show(InfoMessage:new{
+                    UIManager:show(InfoMessage:new {
                         text    = _("Testing connection…"),
                         timeout = 2,
                     })
                     local ok, err = self.api:testConnection()
                     if ok then
-                        UIManager:show(InfoMessage:new{
+                        UIManager:show(InfoMessage:new {
                             text    = _("Connected to Todoist ✓"),
                             timeout = 3,
                         })
                     elseif err == "unauthorized" then
-                        UIManager:show(InfoMessage:new{
+                        UIManager:show(InfoMessage:new {
                             text    = _("Invalid token — please check and re-enter."),
                             timeout = 4,
                         })
                     else
-                        UIManager:show(InfoMessage:new{
+                        UIManager:show(InfoMessage:new {
                             text    = "Connection failed: " .. tostring(err),
                             timeout = 4,
                         })
@@ -233,7 +247,7 @@ function SettingsWidget:_editToken()
                     self:_render()
                 end,
             },
-        }},
+        } },
     }
     UIManager:show(dialog)
     dialog:onShowKeyboard()
@@ -256,7 +270,7 @@ function SettingsWidget:_pickFrom(title, options, current, on_select)
             end,
         })
     end
-    picker_menu = Menu:new{
+    picker_menu = Menu:new {
         title         = title,
         item_table    = items,
         width         = Screen:getWidth(),

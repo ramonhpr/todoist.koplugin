@@ -10,10 +10,10 @@ local ltn12     = require("ltn12")
 local rapidjson = require("rapidjson")
 local logger    = require("logger")
 
-local BASE_URL = "https://api.todoist.com/api/v1"
+local BASE_URL  = "https://api.todoist.com/api/v1"
 
-local Api = {}
-Api.__index = Api
+local Api       = {}
+Api.__index     = Api
 
 function Api:new(opts)
     return setmetatable({ token = opts.token or "" }, self)
@@ -46,7 +46,7 @@ function Api:_request(method, path, body)
 
     -- In LuaSec's table form: result==1 on success, nil on connection failure.
     -- When result==nil, `code` carries the error string instead of an HTTP status.
-    local result, code, resp_headers = https.request{
+    local result, code, resp_headers = https.request {
         url     = BASE_URL .. path,
         method  = method,
         headers = headers,
@@ -137,7 +137,7 @@ function Api:getProjects()
                     end
                 end
             end
-            
+
             cursor = data.next_cursor
             if type(cursor) ~= "string" then
                 cursor = nil
@@ -149,6 +149,17 @@ function Api:getProjects()
     until not cursor or cursor == ""
 
     return all_projects, nil
+end
+
+-- Returns (tasks_array, nil) or (nil, err_string).
+-- Fetches tasks that are past their due date using the Todoist "overdue" filter.
+function Api:getOverdueTasks()
+    local data, err = self:_request("GET", "/tasks/filter?query=overdue")
+    if not data then return nil, err end
+    if type(data) == "table" and data.results then
+        return data.results, nil
+    end
+    return data, nil
 end
 
 -- Quick connectivity / token sanity check.

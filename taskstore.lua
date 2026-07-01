@@ -25,8 +25,9 @@ function TaskStore:new(opts)
     o.settings            = opts.settings                     -- user prefs (token, TTL, etc.) — read-only here
     o._cache              = LuaSettings:open(opts.cache_path) -- dedicated cache file
     o.tasks               = {}                                -- visible task list
+    o.overdue_tasks       = {}                                -- overdue task list (SPEC-010)
     o.projects            = {}                                -- cached projects map [id] = name
-    o.pending_completions = {}                                -- [task_id] = { task, orig_index }
+    o.pending_completions = {}                                -- [task_id] = { task, orig_index, from_overdue }
     o.notified_tasks      = {}                                -- [task_id] = true  (session-scoped)
     o.last_sync_time      = 0
     o:_load()
@@ -38,6 +39,7 @@ end
 -- Writes only to the dedicated cache file; never touches the main settings.
 function TaskStore:_save()
     self._cache:saveSetting("tasks", self.tasks)
+    self._cache:saveSetting("overdue_tasks", self.overdue_tasks)
     self._cache:saveSetting("timestamp", self.last_sync_time)
     self._cache:flush()
 end
@@ -46,7 +48,10 @@ function TaskStore:_load()
     -- _cache is already loaded by LuaSettings:open(); just read from it.
     local tasks         = self._cache:readSetting("tasks")
     self.tasks          = type(tasks) == "table" and tasks or {}
-    
+
+    local overdue       = self._cache:readSetting("overdue_tasks")
+    self.overdue_tasks  = type(overdue) == "table" and overdue or {}
+
     local projects      = self._cache:readSetting("projects")
     self.projects       = type(projects) == "table" and projects or {}
 
@@ -90,6 +95,26 @@ function TaskStore:getTasks()
     return self.tasks
 end
 
+-- ── Overdue task management (SPEC-010) ──────────────────────────────────────
+
+--- Replace the overdue task list with a freshly fetched set.
+--- Drops tasks that have a pending optimistic completion.
+function TaskStore:setOverdueTasks(tasks)
+    local filtered = {}
+    for _, task in ipairs(tasks) do
+        if not self.pending_completions[task.id] then
+            table.insert(filtered, task)
+        end
+    end
+    self.overdue_tasks = filtered
+    self._cache:saveSetting("overdue_tasks", filtered)
+    self._cache:flush()
+end
+
+function TaskStore:getOverdueTasks()
+    return self.overdue_tasks
+end
+
 -- ── Projects management (SPEC-005) ───────────────────────────────────────────
 
 function TaskStore:hasProjects()
@@ -118,13 +143,23 @@ end
 -- ── Optimistic completion (SPEC-004) ─────────────────────────────────────────
 
 --- Remove task from the visible list immediately (optimistic).
---- Stores it in pending_completions for possible rollback.
+--- Searches today's tasks first, then overdue tasks.
+--- Stores origin list in pending_completions for correct rollback.
 --- Returns the removed task, or nil if not found.
 function TaskStore:removeTask(task_id)
     for i, task in ipairs(self.tasks) do
         if task.id == task_id then
             table.remove(self.tasks, i)
-            self.pending_completions[task_id] = { task = task, orig_index = i }
+            self.pending_completions[task_id] = { task = task, orig_index = i, from_overdue = false }
+            self:_save()
+            return task
+        end
+    end
+    -- SPEC-010 Req 9: also search overdue list
+    for i, task in ipairs(self.overdue_tasks) do
+        if task.id == task_id then
+            table.remove(self.overdue_tasks, i)
+            self.pending_completions[task_id] = { task = task, orig_index = i, from_overdue = true }
             self:_save()
             return task
         end
@@ -133,14 +168,16 @@ end
 
 --- Restore a task after a failed completion (rollback).
 --- Marks the task with sync_pending = true so the UI can show an indicator.
+--- Restores into the correct list (today or overdue) based on the stored flag.
 function TaskStore:restoreTask(task_id)
     local pending = self.pending_completions[task_id]
     if not pending then return end
     self.pending_completions[task_id] = nil
 
-    -- Re-insert at original position, clamped to current list length
-    local insert_at = math.min(pending.orig_index, #self.tasks + 1)
-    table.insert(self.tasks, insert_at, pending.task)
+    -- Re-insert at original position, clamped to the target list's current length
+    local list                        = pending.from_overdue and self.overdue_tasks or self.tasks
+    local insert_at                   = math.min(pending.orig_index, #list + 1)
+    table.insert(list, insert_at, pending.task)
     pending.task.sync_pending = true
     self:_save()
 end
@@ -184,11 +221,13 @@ end
 
 function TaskStore:clearCache()
     self.tasks               = {}
+    self.overdue_tasks       = {}
     self.projects            = {}
     self.last_sync_time      = 0
     self.pending_completions = {}
     self.notified_tasks      = {}
     self._cache:delSetting("tasks")
+    self._cache:delSetting("overdue_tasks")
     self._cache:delSetting("projects")
     self._cache:delSetting("timestamp")
     self._cache:flush()

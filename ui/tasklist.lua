@@ -1,8 +1,9 @@
 --[[
-    Today's task list widget (SPEC-001, SPEC-004, SPEC-007).
+    Today's task list widget (SPEC-001, SPEC-004, SPEC-007, SPEC-010).
 
     Wraps a KOReader Menu widget and handles:
       • Online / offline / cached rendering with a sync-age banner
+      • Overdue section above today's tasks (SPEC-010)
       • Sorting: three user-selectable modes (date / priority / project) (SPEC-007)
       • Per-task complete action with optimistic UI update and rollback
       • Error state with Retry button
@@ -74,13 +75,13 @@ function TaskListWidget:refresh(explicit)
 
     if valid and not online and not explicit then
         -- Fresh cache, offline — show it
-        self:_render(tasks, true)
+        self:_render(true)
     elseif (not valid or #tasks == 0) and not online and not explicit then
         -- Stale / empty + offline — show whatever we have with a staleness warning
-        self:_render(tasks, true)
+        self:_render(true)
     elseif valid and online and not explicit then
         -- Fresh cache + online — show immediately, refresh in background
-        self:_render(tasks, false)
+        self:_render(false)
         self:_fetchAndRender(true, explicit)
     else
         -- Stale / empty + online or explicit refresh — block on fetch
@@ -96,35 +97,198 @@ function TaskListWidget:_fetchAndRender(background, explicit)
     end
     NetworkMgr:runWhenConnected(function()
         if explicit or not self.task_store:hasProjects() then
-            local projects, err = self.api:getProjects()
+            local projects, _ = self.api:getProjects()
             if projects then
                 self.task_store:setProjects(projects)
             end
         end
 
-        local tasks, err = self.api:getTodayTasks()
+        -- SPEC-010 Req 1: today request first (sequential)
+        local tasks, today_err = self.api:getTodayTasks()
         if tasks then
             self.task_store:setTasks(tasks)
             self.notifications:scheduleTaskNotifications(tasks)
-            self:_render(tasks, false)
+        end
+
+        -- SPEC-010 Req 1: overdue request second, after today completes
+        local overdue, _ = self.api:getOverdueTasks()
+        if overdue then
+            self.task_store:setOverdueTasks(overdue)
+        end
+        -- On overdue failure: keep whatever is already in store/cache (Req 10)
+
+        if tasks then
+            self:_render(false)
         else
             local cached = self.task_store:getTasks()
             if #cached > 0 then
-                self:_render(cached, true)
+                self:_render(true)
                 UIManager:show(InfoMessage:new {
                     text    = _("Sync failed — showing cached tasks."),
                     timeout = 3,
                 })
             else
-                self:_renderError(err)
+                self:_renderError(today_err)
             end
         end
     end)
 end
 
--- ── Private: rendering ────────────────────────────────────────────────────────
+-- ── Private: task row builder ──────────────────────────────────────────────────
 
--- ── Private: sort helpers (SPEC-007) ─────────────────────────────────────────
+--- Build a single Menu item for a task row.
+--- Shared by both the overdue section and the today section.
+function TaskListWidget:_buildTaskItem(task)
+    local prio         = PRIO_PREFIX[task.priority] or ""
+    local pending_mark = task.sync_pending and "  ⚠" or ""
+    local title        = task.content or "?"
+
+    local max_title    = 72 - #prio - #pending_mark
+    if #title > max_title then
+        title = title:sub(1, max_title - 1) .. "…"
+    end
+
+    local due_str = ""
+    if task.due and task.due.date then
+        local h, m = task.due.date:match("T(%d%d):(%d%d)")
+        if h then due_str = h .. ":" .. m end
+    end
+    local project_name = self.task_store:getProjectName(task.project_id)
+
+    local detail_parts = {}
+    if due_str ~= "" then
+        table.insert(detail_parts, "⏱ " .. due_str)
+    end
+    if project_name then
+        table.insert(detail_parts, "#" .. project_name)
+    end
+
+    local main_text = prio .. title .. pending_mark
+    if #detail_parts > 0 then
+        main_text = main_text .. "\n    " .. table.concat(detail_parts, "   ·   ")
+    end
+
+    return {
+        text     = main_text,
+        callback = function() self:_onTaskTap(task) end,
+    }
+end
+
+function TaskListWidget:_render(from_cache)
+    -- Read both task lists from store (SPEC-010)
+    local today_tasks    = self.task_store:getTasks()
+    local overdue_tasks  = self.task_store:getOverdueTasks()
+
+    -- SPEC-010 Req 3: show_overdue defaults to true when the key is absent
+    local show_overdue   = self.settings:readSetting("show_overdue") ~= false
+
+    -- SPEC-010 Req 12: build overdue ID set for deduplication; sort overdue section
+    local overdue_ids    = {}
+    local sorted_overdue = {}
+    if show_overdue and #overdue_tasks > 0 then
+        sorted_overdue = self:_sortTasks(overdue_tasks)
+        for _, t in ipairs(overdue_tasks) do
+            overdue_ids[t.id] = true
+        end
+    end
+
+    -- Sort today's tasks and filter out any IDs already shown in overdue
+    local sorted_today   = self:_sortTasks(today_tasks)
+    local filtered_today = {}
+    for _, t in ipairs(sorted_today) do
+        if not overdue_ids[t.id] then
+            table.insert(filtered_today, t)
+        end
+    end
+
+    local items               = {}
+    local has_overdue_section = #sorted_overdue > 0
+
+    -- ── Overdue section (SPEC-010 Req 4, 8) ──
+    if has_overdue_section then
+        table.insert(items, {
+            text     = "⚠ Overdue",
+            is_title = true,
+            callback = function() end,
+        })
+        for _, task in ipairs(sorted_overdue) do
+            table.insert(items, self:_buildTaskItem(task))
+        end
+    end
+
+    -- ── Today section ──
+    -- Show the empty-state message only when the whole screen is blank
+    if #filtered_today == 0 and not has_overdue_section then
+        table.insert(items, {
+            text     = _("No tasks due today"),
+            dim      = true,
+            callback = function() end,
+        })
+    else
+        for _, task in ipairs(filtered_today) do
+            table.insert(items, self:_buildTaskItem(task))
+        end
+    end
+
+    -- ── Footer actions ──
+    table.insert(items, { text = string.rep("─", 30), dim = true, callback = function() end })
+    -- SPEC-007 Req 7/8/11: sort cycle button on task list only
+    table.insert(items, {
+        text = _("⇋  Sort: ") .. (SORT_LABELS[self.sort_mode] or self.sort_mode),
+        callback = function()
+            local next_mode = SORT_MODES[1]
+            for i, m in ipairs(SORT_MODES) do
+                if m == self.sort_mode then
+                    next_mode = SORT_MODES[(i % #SORT_MODES) + 1]
+                    break
+                end
+            end
+            self.sort_mode = next_mode
+            self.settings:saveSetting("sort_mode", next_mode)
+            self.settings:flush()
+            self:_render(from_cache)
+        end,
+    })
+    -- Direction toggle
+    table.insert(items, {
+        text = _("⇅  Direction: ") .. (DIR_LABELS[self.sort_dir] or self.sort_dir),
+        callback = function()
+            local next_dir = self.sort_dir == "asc" and "desc" or "asc"
+            self.sort_dir = next_dir
+            self.settings:saveSetting("sort_dir", next_dir)
+            self.settings:flush()
+            self:_render(from_cache)
+        end,
+    })
+    table.insert(items, {
+        text     = _("↻  Refresh"),
+        callback = function() self:refresh(true) end,
+    })
+    table.insert(items, {
+        text     = _("⚙  Settings"),
+        callback = function() self.on_settings() end,
+    })
+
+    -- ── Title bar: cache banner + overdue badge + sort label ──
+    -- SPEC-007 Req 6, SPEC-010 Req 7
+    local sort_label    = (SORT_LABELS[self.sort_mode] or self.sort_mode)
+        .. " " .. (self.sort_dir == "desc" and "↓" or "↑")
+    local overdue_badge = has_overdue_section
+        and ("  ·  " .. #sorted_overdue .. " overdue") or ""
+    local title
+    if from_cache then
+        local age_min = math.floor(self.task_store:getCacheAgeSeconds() / 60)
+        local badge   = NetworkMgr:isConnected() and "" or "  ·  Offline"
+        title         = "Todoist  (synced " .. age_min .. "m ago" .. badge .. ")"
+            .. overdue_badge .. "  ·  by " .. sort_label
+    else
+        title = "Todoist — Today" .. overdue_badge .. "  ·  by " .. sort_label
+    end
+
+    self:_showOrUpdate(title, items)
+end
+
+-- ── Private: sort helpers (SPEC-007) ───────────────────────────────────────────
 
 --- Compare two optional datetime strings for ascending order.
 --- nil (no due time) sorts after any real value.
@@ -193,114 +357,6 @@ function TaskListWidget:_sortTasks(tasks)
         end
     end
     return sorted
-end
-
-function TaskListWidget:_render(tasks, from_cache)
-    local sorted = self:_sortTasks(tasks)
-
-    local items = {}
-
-    if #sorted == 0 then
-        table.insert(items, {
-            text     = _("No tasks due today"),
-            dim      = true,
-            callback = function() end,
-        })
-    else
-        for _, task in ipairs(sorted) do
-            local prio         = PRIO_PREFIX[task.priority] or ""
-            local pending_mark = task.sync_pending and "  ⚠" or ""
-            local title        = task.content or "?"
-
-            -- Truncate title if too long (simpler now that time/project are on their own row)
-            local max_title    = 72 - #prio - #pending_mark
-            if #title > max_title then
-                title = title:sub(1, max_title - 1) .. "…"
-            end
-
-            -- ── Build detail line: due time · project ──
-            local due_str = ""
-            if task.due and task.due.date then
-                local h, m = task.due.date:match("T(%d%d):(%d%d)")
-                if h then due_str = h .. ":" .. m end
-            end
-            local project_name = self.task_store:getProjectName(task.project_id)
-
-            local detail_parts = {}
-            if due_str ~= "" then
-                table.insert(detail_parts, "⏱ " .. due_str)
-            end
-            if project_name then
-                table.insert(detail_parts, "#" .. project_name)
-            end
-
-            local main_text = prio .. title .. pending_mark
-            if #detail_parts > 0 then
-                main_text = main_text .. "\n    " .. table.concat(detail_parts, "   ·   ")
-            end
-
-            table.insert(items, {
-                text     = main_text,
-                callback = function() self:_onTaskTap(task) end,
-            })
-        end
-    end
-
-    -- ── Footer actions ──
-    table.insert(items, { text = string.rep("─", 30), dim = true, callback = function() end })
-    -- SPEC-007 Req 7/8/11: sort cycle button on task list only
-    table.insert(items, {
-        text = _("⇋  Sort: ") .. (SORT_LABELS[self.sort_mode] or self.sort_mode),
-        callback = function()
-            -- Advance to the next sort mode in cycle order
-            local next_mode = SORT_MODES[1]
-            for i, m in ipairs(SORT_MODES) do
-                if m == self.sort_mode then
-                    next_mode = SORT_MODES[(i % #SORT_MODES) + 1]
-                    break
-                end
-            end
-            self.sort_mode = next_mode
-            -- SPEC-007 Req 9: persist the new mode
-            self.settings:saveSetting("sort_mode", next_mode)
-            self.settings:flush()
-            -- SPEC-007 Req 8: immediately re-render in the new order
-            self:_render(self.task_store:getTasks(), from_cache)
-        end,
-    })
-    -- Direction toggle: cycles between ascending and descending
-    table.insert(items, {
-        text = _("⇅  Direction: ") .. (DIR_LABELS[self.sort_dir] or self.sort_dir),
-        callback = function()
-            local next_dir = self.sort_dir == "asc" and "desc" or "asc"
-            self.sort_dir = next_dir
-            self.settings:saveSetting("sort_dir", next_dir)
-            self.settings:flush()
-            self:_render(self.task_store:getTasks(), from_cache)
-        end,
-    })
-    table.insert(items, {
-        text     = _("↻  Refresh"),
-        callback = function() self:refresh(true) end,
-    })
-    table.insert(items, {
-        text     = _("⚙  Settings"),
-        callback = function() self.on_settings() end,
-    })
-
-    -- ── Title with optional cache banner + sort mode + direction (SPEC-007 Req 6) ──
-    local sort_label = (SORT_LABELS[self.sort_mode] or self.sort_mode)
-        .. " " .. (self.sort_dir == "desc" and "↓" or "↑")
-    local title
-    if from_cache then
-        local age_min = math.floor(self.task_store:getCacheAgeSeconds() / 60)
-        local badge   = NetworkMgr:isConnected() and "" or "  ·  Offline"
-        title         = "Todoist  (synced " .. age_min .. "m ago" .. badge .. ")  ·  by " .. sort_label
-    else
-        title = "Todoist — Today  ·  by " .. sort_label
-    end
-
-    self:_showOrUpdate(title, items)
 end
 
 function TaskListWidget:_renderError(err)
@@ -391,7 +447,7 @@ function TaskListWidget:_completeTask(task)
 
     -- Optimistic removal (SPEC-004 Req 2)
     self.task_store:removeTask(task.id)
-    self:_render(self.task_store:getTasks(), false)
+    self:_render(false)
 
     local function finish(success, err)
         self._processing_task = nil
@@ -403,7 +459,7 @@ function TaskListWidget:_completeTask(task)
         else
             -- Rollback (SPEC-004 Req 5)
             self.task_store:restoreTask(task.id)
-            self:_render(self.task_store:getTasks(), false)
+            self:_render(false)
             UIManager:show(ConfirmBox:new {
                 text        = 'Could not complete\n"' .. (task.content or "?") .. '"\n\n' .. tostring(err or ""),
                 ok_text     = _("Retry"),
@@ -499,7 +555,7 @@ function TaskListWidget:_rescheduleTask(task, due_string, is_postpone)
 
     self._processing_task = task.id
     self.task_store:removeTask(task.id)
-    self:_render(self.task_store:getTasks(), false)
+    self:_render(false)
 
     local function finish(success, err)
         self._processing_task = nil
@@ -507,7 +563,7 @@ function TaskListWidget:_rescheduleTask(task, due_string, is_postpone)
             self.task_store:confirmCompletion(task.id)
         else
             self.task_store:restoreTask(task.id)
-            self:_render(self.task_store:getTasks(), false)
+            self:_render(false)
             UIManager:show(ConfirmBox:new {
                 text        = 'Could not reschedule\n"' .. (task.content or "?") .. '"\n\n' .. tostring(err or ""),
                 ok_text     = _("Retry"),
