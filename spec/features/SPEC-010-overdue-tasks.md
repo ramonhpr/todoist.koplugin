@@ -1,7 +1,7 @@
 ---
 id: SPEC-010
 title: Overdue Tasks in Today View
-status: IN PROGRESS
+status: DONE
 created: 2026-06-30
 updated: 2026-06-30
 resolved: 2026-06-30
