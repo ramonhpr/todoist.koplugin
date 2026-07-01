@@ -291,7 +291,11 @@ function TaskListWidget:_render(from_cache)
     })
     table.insert(items, {
         text     = _("⚙  Settings"),
-        callback = function() self.on_settings() end,
+        callback = function()
+            -- Pass a re-render callback so display toggles in Settings
+            -- (e.g. show_overdue) take effect immediately on the task list.
+            self.on_settings(function() self:_render(false) end)
+        end,
     })
 
     -- ── Title bar: cache banner + overdue badge + sort label ──

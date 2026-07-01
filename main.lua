@@ -108,16 +108,17 @@ function TodoistPlugin:openTaskList()
     widget:refresh()
 end
 
-function TodoistPlugin:openSettings()
+function TodoistPlugin:openSettings(on_display_changed)
     local SettingsWidget = require("ui/settings")
     SettingsWidget:new {
-        plugin           = self,
-        settings         = self.settings,
-        api              = self.api,
-        notifications    = self.notifications,
-        on_token_changed = function(token)
+        plugin             = self,
+        settings           = self.settings,
+        api                = self.api,
+        notifications      = self.notifications,
+        on_token_changed   = function(token)
             self.api:setToken(token)
         end,
+        on_display_changed = on_display_changed,
     }
 end
 

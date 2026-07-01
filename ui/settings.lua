@@ -27,12 +27,13 @@ SettingsWidget.__index = SettingsWidget
 
 function SettingsWidget:new(opts)
     local o = setmetatable({
-        plugin           = opts.plugin,
-        settings         = opts.settings,
-        api              = opts.api,
-        notifications    = opts.notifications,
-        on_token_changed = opts.on_token_changed,
-        _menu            = nil,
+        plugin             = opts.plugin,
+        settings           = opts.settings,
+        api                = opts.api,
+        notifications      = opts.notifications,
+        on_token_changed   = opts.on_token_changed,
+        on_display_changed = opts.on_display_changed,
+        _menu              = nil,
     }, self)
     o:_render()
     return o
@@ -155,6 +156,8 @@ function SettingsWidget:_render()
         callback = function()
             s:saveSetting("show_overdue", not show_overdue)
             s:flush()
+            -- Immediately re-render the task list behind the settings screen
+            if self.on_display_changed then self.on_display_changed() end
             self:_render()
         end,
     })
