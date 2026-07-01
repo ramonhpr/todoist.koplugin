@@ -138,7 +138,8 @@ end
 
 --- Build a single Menu item for a task row.
 --- Shared by both the overdue section and the today section.
-function TaskListWidget:_buildTaskItem(task)
+--- Pass show_date=true for overdue rows so the due date is always visible.
+function TaskListWidget:_buildTaskItem(task, show_date)
     local prio         = PRIO_PREFIX[task.priority] or ""
     local pending_mark = task.sync_pending and "  ⚠" or ""
     local title        = task.content or "?"
@@ -151,7 +152,22 @@ function TaskListWidget:_buildTaskItem(task)
     local due_str = ""
     if task.due and task.due.date then
         local h, m = task.due.date:match("T(%d%d):(%d%d)")
-        if h then due_str = h .. ":" .. m end
+        if show_date then
+            -- Overdue rows: always show the date; append time when present.
+            local MONTHS = {
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+            }
+            local _, mo, d = task.due.date:match("^(%d%d%d%d)-(%d%d)-(%d%d)")
+            if mo then
+                local day_label = tostring(tonumber(d)) -- strip leading zero
+                due_str = (MONTHS[tonumber(mo)] or mo) .. " " .. day_label
+                if h then due_str = due_str .. " " .. h .. ":" .. m end
+            end
+        else
+            -- Today rows: show time only (all-day tasks show nothing).
+            if h then due_str = h .. ":" .. m end
+        end
     end
     local project_name = self.task_store:getProjectName(task.project_id)
 
@@ -212,11 +228,20 @@ function TaskListWidget:_render(from_cache)
             callback = function() end,
         })
         for _, task in ipairs(sorted_overdue) do
-            table.insert(items, self:_buildTaskItem(task))
+            table.insert(items, self:_buildTaskItem(task, true)) -- show_date=true
         end
     end
 
     -- ── Today section ──
+    -- Add a "Today" header only when the overdue section is also visible,
+    -- so the boundary between the two sections is unambiguous.
+    if has_overdue_section and #filtered_today > 0 then
+        table.insert(items, {
+            text     = "Today",
+            is_title = true,
+            callback = function() end,
+        })
+    end
     -- Show the empty-state message only when the whole screen is blank
     if #filtered_today == 0 and not has_overdue_section then
         table.insert(items, {
@@ -226,7 +251,7 @@ function TaskListWidget:_render(from_cache)
         })
     else
         for _, task in ipairs(filtered_today) do
-            table.insert(items, self:_buildTaskItem(task))
+            table.insert(items, self:_buildTaskItem(task)) -- show_date=false (default)
         end
     end
 
