@@ -103,7 +103,7 @@ function TodoistPlugin:openTaskList()
         api           = self.api,
         notifications = self.notifications,
         settings      = self.settings,
-        on_settings   = function() self:openSettings() end,
+        on_settings   = function(on_display_changed) self:openSettings(on_display_changed) end,
     }
     widget:refresh()
 end
