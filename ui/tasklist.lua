@@ -103,21 +103,15 @@ function TaskListWidget:_fetchAndRender(background, explicit)
             end
         end
 
-        -- SPEC-010 Req 1: today request first (sequential)
-        local tasks, today_err = self.api:getTodayTasks()
-        if tasks then
-            self.task_store:setTasks(tasks)
-            self.notifications:scheduleTaskNotifications(tasks)
+        -- Single combined request: today + overdue in one round-trip (SPEC-010)
+        local today_tasks, overdue_tasks, fetch_err = self.api:getTodayAndOverdueTasks()
+        if today_tasks then
+            self.task_store:setTasks(today_tasks)
+            self.notifications:scheduleTaskNotifications(today_tasks)
+            self.task_store:setOverdueTasks(overdue_tasks)
         end
 
-        -- SPEC-010 Req 1: overdue request second, after today completes
-        local overdue, _ = self.api:getOverdueTasks()
-        if overdue then
-            self.task_store:setOverdueTasks(overdue)
-        end
-        -- On overdue failure: keep whatever is already in store/cache (Req 10)
-
-        if tasks then
+        if today_tasks then
             self:_render(false)
         else
             local cached = self.task_store:getTasks()
@@ -128,7 +122,7 @@ function TaskListWidget:_fetchAndRender(background, explicit)
                     timeout = 3,
                 })
             else
-                self:_renderError(today_err)
+                self:_renderError(fetch_err)
             end
         end
     end)

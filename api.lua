@@ -89,6 +89,33 @@ function Api:_request(method, path, body)
     return data, nil
 end
 
+-- Returns (today_tasks, overdue_tasks, nil) or (nil, nil, err_string).
+-- Issues a single "today | overdue" query and splits results client-side
+-- by comparing each task's due date to today's local date (SPEC-010).
+function Api:getTodayAndOverdueTasks()
+    local data, err = self:_request("GET", "/tasks/filter?query=today%20%7C%20overdue")
+    if not data then return nil, nil, err end
+
+    local all_tasks = (type(data) == "table" and data.results) and data.results or data
+    if type(all_tasks) ~= "table" then return {}, {}, nil end
+
+    local today_str     = os.date("%Y-%m-%d")
+    local today_tasks   = {}
+    local overdue_tasks = {}
+    for _, task in ipairs(all_tasks) do
+        local due_date  = task.due and task.due.date
+        local date_part = due_date and due_date:sub(1, 10)
+        -- Tasks whose due date is strictly before today belong to overdue;
+        -- tasks due today or with no date belong to today.
+        if date_part and date_part < today_str then
+            table.insert(overdue_tasks, task)
+        else
+            table.insert(today_tasks, task)
+        end
+    end
+    return today_tasks, overdue_tasks, nil
+end
+
 -- Returns (tasks_array, nil) or (nil, err_string).
 -- API v1 uses a dedicated filter endpoint that returns a paginated envelope.
 -- We fetch the first page (default 50 tasks) which is sufficient for a daily list.
@@ -149,17 +176,6 @@ function Api:getProjects()
     until not cursor or cursor == ""
 
     return all_projects, nil
-end
-
--- Returns (tasks_array, nil) or (nil, err_string).
--- Fetches tasks that are past their due date using the Todoist "overdue" filter.
-function Api:getOverdueTasks()
-    local data, err = self:_request("GET", "/tasks/filter?query=overdue")
-    if not data then return nil, err end
-    if type(data) == "table" and data.results then
-        return data.results, nil
-    end
-    return data, nil
 end
 
 -- Quick connectivity / token sanity check.

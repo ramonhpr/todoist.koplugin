@@ -43,7 +43,7 @@ Storage follows ADR-003: a new `overdue_tasks` key is added to the existing `tod
 
 ## Requirements
 
-1. When the plugin syncs (explicit or background), it **MUST** issue two sequential API requests in the following fixed order: first `GET /tasks/filter?query=today`, then `GET /tasks/filter?query=overdue`. The overdue request **MUST NOT** begin until the today request has completed (successfully or via fallback). Both results **MUST** be available before the task list is rendered.
+1. When the plugin syncs (explicit or background), it **MUST** issue a single `GET /tasks/filter?query=today%20%7C%20overdue` request that returns both today's and overdue tasks in one round-trip. The plugin **MUST** split the results client-side by comparing each task's `due.date` (first 10 characters) against the current local date: tasks with a date strictly before today are classified as overdue; all other tasks (due today, or with no date) are classified as today's tasks. Both sets **MUST** be available before the task list is rendered.
 2. Overdue tasks **MUST** be stored under the key `overdue_tasks` in the same LuaSettings cache file as today's tasks, following ADR-003.
 3. A user-visible settings toggle `show_overdue` (boolean, default `true`) **MUST** control whether the overdue section is displayed; it **MUST** be readable and writable via the Settings screen (SPEC-003).
 4. When `show_overdue` is `true` and at least one overdue task exists, the task list **MUST** render a non-tappable section header labelled `"⚠ Overdue"` immediately above today's tasks, using `is_title = true` (the same mechanism as SPEC-008).
