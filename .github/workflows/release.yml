@@ -29,8 +29,8 @@ jobs:
         run: |
           TAG=${{ steps.tag_version.outputs.new_tag }}
           # Replace the hardcoded version in _meta.lua with the new git tag
-          sed -i "s/version         = 1,/version         = \"${TAG}\",/" _meta.lua
-          
+          sed -i "s/version[[:space:]]*= 1,/version         = \"${TAG}\",/" _meta.lua
+
           ARCHIVE="todoist.koplugin.zip"
           zip -r "${ARCHIVE}" . \
             --exclude "*.git*" \
