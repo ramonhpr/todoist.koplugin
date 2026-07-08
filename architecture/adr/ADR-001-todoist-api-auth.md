@@ -27,8 +27,13 @@ Key endpoints used by the plugin:
 
 | Action | Endpoint |
 |---|---|
-| Today's tasks | `GET /tasks/filter?query=today` — returns `{results: [...], next_cursor}` |
-| Close a task | `POST /tasks/{id}/close` — returns HTTP 200 with null body |
+| Today + overdue tasks | `GET /tasks/filter?query=today%20%7C%20overdue` — single request, split client-side |
+| Arbitrary date filter (upcoming) | `GET /tasks/filter?query=<encoded>` |
+| Projects list | `GET /projects` — cursor-paginated, cached per session |
+| Close (complete) a task | `POST /tasks/{id}/close` — returns HTTP 204 No Content |
+| Update a task (reschedule) | `POST /tasks/{id}` — accepts `due_string` for natural-language dates |
+| Create a task | `POST /tasks` — accepts `content` and optional `due_string` |
+| Current user profile | `GET /user` — used to resolve the caller's ID for assignee filtering |
 
 The token is entered once in the plugin's settings screen and stored in KOReader's local
 settings file (`LuaSettings`).
@@ -38,8 +43,9 @@ settings file (`LuaSettings`).
 - Simple implementation: one HTTP GET, JSON response, no OAuth dance
 - Token is stored on-device in plaintext inside KOReader's settings directory; acceptable
   for a personal device but users should be warned not to share the settings file
-- If Todoist deprecates REST v2, the API module (`api.lua`) is the only file that needs updating
-- Write operations (completing tasks) are possible in a future version with the same auth
+- If Todoist changes the API v1 base URL, `api.lua` is the only file that needs updating
+- Write operations (complete, reschedule, create) use the same Bearer token with no
+  additional authentication step (see ADR-004)
 
 ## Options Considered
 

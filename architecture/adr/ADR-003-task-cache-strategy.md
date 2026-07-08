@@ -16,7 +16,7 @@ in-memory store with no TTL would hammer the API on every plugin open.
 
 ## Decision
 
-Persist the task list to a **dedicated** `todoist_cache.lua` file (a separate `LuaSettings`
+Persist task state to a **dedicated** `todoist_cache.lua` file (a separate `LuaSettings`
 instance from the main `todoist.lua` settings) with a **TTL of 15 minutes** (configurable).
 Using a separate file is a hard requirement: `LuaSettings.flush()` rewrites the entire file
 on every save, so mixing task data into the main settings file risks overwriting the API token
@@ -29,6 +29,18 @@ flush concurrently. On plugin open:
 
 A manual "Refresh" action is always available from the task list screen regardless of TTL.
 
+The cache file holds **three keys**:
+
+| Key | Content | Written by |
+|---|---|---|
+| `tasks` | Today's task array | `TaskStore:setTasks()` |
+| `overdue_tasks` | Overdue task array (SPEC-010) | `TaskStore:setOverdueTasks()` |
+| `projects` | `{[project_id] = name}` map (SPEC-005) | `TaskStore:setProjects()` |
+
+A `timestamp` key records the last successful sync time for TTL calculation.
+Upcoming view results (SPEC-011) are intentionally **not** cached — they are transient
+in-memory data discarded when the user returns to the today view.
+
 ## Consequences
 
 - Task list works offline with potentially stale data (age shown to user)
@@ -38,11 +50,13 @@ A manual "Refresh" action is always available from the task list screen regardle
 - Cache corruption or deletion only affects task display, never the API token or user prefs
 - Cache file contains task titles (potentially sensitive); stored under KOReader's
   existing settings directory with no additional encryption
+- Adding a new cached resource (e.g. collaborators) requires only a new key in the same
+  file; no second cache file is ever introduced
 
 ## Options Considered
 
 | Option | Pros | Cons |
-|--------|------|------|
+|---|---|---|
 | Disk cache with TTL | Works offline, rate-limit friendly | Stale data risk |
 | In-memory only | Always fresh when online | Broken offline, fetches on every open |
-| Full offline Sync API | True offline-first | Very complex, out of scope for v1 |
+| Full offline Sync API | True offline-first | Very complex, out of scope |

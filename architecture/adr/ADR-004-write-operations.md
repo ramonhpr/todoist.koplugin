@@ -7,38 +7,45 @@ date: 2026-06-16
 
 ## Context
 
-Task completion is the first write operation in the plugin. Two strategies exist for
+Several write operations exist in the plugin. Two strategies exist for
 updating local state after a write: wait for the API to confirm before updating the UI
 ("pessimistic"), or update the UI immediately and roll back on failure ("optimistic").
 
 On an e-ink device, round-trip latency from Wi-Fi association to API response can be 2–5
 seconds. A pessimistic update would leave the user staring at a frozen screen waiting for
-confirmation, which is a poor experience. Completion is also a low-risk, reversible
-operation in Todoist (tasks can be re-opened), so the cost of a brief inconsistency is low.
+confirmation, which is a poor experience. The write operations in scope are low-risk and
+reversible in Todoist, so the cost of a brief inconsistency is low.
 
-The Todoist API v1 endpoint for completing a task is:
-`POST /tasks/{task_id}/close` — returns HTTP 204 No Content on success.
+Write operations using this pattern:
+- **Complete a task** — `POST /tasks/{id}/close` (SPEC-004)
+- **Reschedule a task** — `POST /tasks/{id}` with `due_string` (SPEC-009)
+- **Complete / reschedule in the upcoming view** — same endpoints, in-memory list only (SPEC-011)
+- **Create a task** — `POST /tasks` (SPEC-012)
 
 ## Decision
 
-Use an **optimistic local update** strategy for task completion:
+Use an **optimistic local update** strategy for all write operations:
 
-1. Immediately remove (or strike-through) the task from the local list and cache
-2. Fire `POST /tasks/{task_id}/close` in the background
-3. If the API call succeeds (204): no further action needed
+1. Immediately remove or update the task in the local list
+2. Fire the appropriate API call
+3. If the API call succeeds: confirm and clean up pending state
 4. If the API call fails: restore the task in the list, show an error message with a
-   "Retry" option, and mark the task with a "sync pending" indicator
+   "Retry" option, and mark the task with a "sync pending" (`⚠`) indicator
 
-A write queue (`taskstore.lua`) will hold pending completion requests so they can be
-retried if Wi-Fi becomes available mid-session.
+For **task creation** (SPEC-012) no optimistic removal applies; instead, a full list
+refresh is triggered on success so newly-due tasks appear immediately.
 
 ## Consequences
 
-- UI feels instant on slow connections
+- UI feels instant on slow connections for all write operations
 - A brief window of inconsistency between local state and Todoist is acceptable
-- Rollback logic must be implemented and tested
-- Tasks completed offline will be queued and retried; if KOReader is closed before retry,
-  the completion is lost (acceptable for v1; silent queue flush on close)
+- Rollback logic must be implemented for each write operation type
+- `TaskStore` tracks `pending_completions` with an `orig_index` and `from_overdue` flag
+  so rollback always restores a task to the correct list at the correct position
+- Upcoming view (SPEC-011) manages its own in-memory pending state, never touching
+  `TaskStore`, since upcoming results are not persisted
+- Tasks completed offline stay removed optimistically; if KOReader is closed before
+  the API call can be retried, the completion is lost (acceptable trade-off)
 - No new authentication mechanism needed — same Bearer token from ADR-001
 
 ## Options Considered
