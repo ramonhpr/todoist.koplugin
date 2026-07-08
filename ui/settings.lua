@@ -169,7 +169,10 @@ function SettingsWidget:_render()
         callback = function()
             local version = self.plugin.version or "1"
             UIManager:show(InfoMessage:new {
-                text    = _("Todoist Plugin for KOReader\nVersion: ") .. tostring(version),
+                text    = "KO-Tasks for Todoist" ..
+                    "\nVersion: " .. tostring(version) ..
+                    "\n\nNot created by, affiliated with," ..
+                    "\nor supported by Doist.",
                 timeout = 5,
             })
         end,
