@@ -178,6 +178,13 @@ function Api:getProjects()
     return all_projects, nil
 end
 
+-- Returns (user_object, nil) or (nil, err_string). (SPEC-015)
+function Api:getCurrentUser()
+    local data, err = self:_request("GET", "/user")
+    if not data then return nil, err end
+    return data, nil
+end
+
 -- Quick connectivity / token sanity check.
 function Api:testConnection()
     local data, err = self:getTodayTasks()

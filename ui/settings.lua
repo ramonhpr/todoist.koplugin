@@ -235,6 +235,12 @@ function SettingsWidget:_editToken()
                     })
                     local ok, err = self.api:testConnection()
                     if ok then
+                        -- SPEC-015 Req 2: cache user_id whenever the token is (re-)saved
+                        local user, _ = self.api:getCurrentUser()
+                        if user and user.id then
+                            self.settings:saveSetting("user_id", tostring(user.id))
+                            self.settings:flush()
+                        end
                         UIManager:show(InfoMessage:new {
                             text    = _("Connected to Todoist ✓"),
                             timeout = 3,

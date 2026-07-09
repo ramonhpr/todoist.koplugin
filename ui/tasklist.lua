@@ -1,5 +1,5 @@
 --[[
-    Today's task list widget (SPEC-001, SPEC-004, SPEC-007, SPEC-010).
+    Today's task list widget (SPEC-001, SPEC-004, SPEC-007, SPEC-010, SPEC-015).
 
     Wraps a KOReader Menu widget and handles:
       • Online / offline / cached rendering with a sync-age banner
@@ -30,6 +30,10 @@ local SORT_LABELS      = { date = "Date", priority = "Priority", project = "Proj
 -- Sort direction labels
 local DIR_LABELS       = { asc = "↑ Asc", desc = "↓ Desc" }
 
+-- Filter by assignee modes (SPEC-015)
+local FILTER_MODES     = { "all", "me", "unassigned" }
+local FILTER_LABELS    = { all = "All", me = "Me", unassigned = "Unassigned" }
+
 function TaskListWidget:new(opts)
     -- SPEC-007 Req 1: read sort_mode; default to "date" when absent or invalid
     local raw_mode = opts.settings:readSetting("sort_mode")
@@ -53,16 +57,30 @@ function TaskListWidget:new(opts)
         opts.settings:flush()
     end
 
+    -- SPEC-015 Req 4: read filter_assignee; default to "all" when absent or invalid
+    local raw_filter = opts.settings:readSetting("filter_assignee")
+    local fmode = "all"
+    for _, f in ipairs(FILTER_MODES) do
+        if raw_filter == f then
+            fmode = f; break
+        end
+    end
+    if raw_filter ~= nil and raw_filter ~= fmode then
+        opts.settings:saveSetting("filter_assignee", fmode)
+        opts.settings:flush()
+    end
+
     local o = setmetatable({
-        plugin        = opts.plugin,
-        task_store    = opts.task_store,
-        api           = opts.api,
-        notifications = opts.notifications,
-        settings      = opts.settings,
-        on_settings   = opts.on_settings,
-        sort_mode     = mode,
-        sort_dir      = dir,
-        _menu         = nil,
+        plugin          = opts.plugin,
+        task_store      = opts.task_store,
+        api             = opts.api,
+        notifications   = opts.notifications,
+        settings        = opts.settings,
+        on_settings     = opts.on_settings,
+        sort_mode       = mode,
+        sort_dir        = dir,
+        filter_assignee = fmode,
+        _menu           = nil,
     }, self)
     return o
 end
@@ -89,9 +107,38 @@ function TaskListWidget:refresh(explicit)
     end
 end
 
--- ── Private: networking ───────────────────────────────────────────────────────
+-- ── Private: filter helper (SPEC-015) ────────────────────────────────────────
 
-function TaskListWidget:_fetchAndRender(background, explicit)
+function TaskListWidget:_filterTasks(tasks)
+    local mode = self.filter_assignee
+    if mode == "all" then return tasks end
+    local user_id = self.settings:readSetting("user_id")
+    if mode == "me" then
+        if not user_id then
+            UIManager:show(InfoMessage:new {
+                text    = _("User ID not yet resolved — showing all tasks"),
+                timeout = 3,
+            })
+            return tasks
+        end
+        local out = {}
+        for _, t in ipairs(tasks) do
+            if tostring(t.assignee_id or "") == tostring(user_id) then
+                table.insert(out, t)
+            end
+        end
+        return out
+    elseif mode == "unassigned" then
+        local out = {}
+        for _, t in ipairs(tasks) do
+            if not t.assignee_id then table.insert(out, t) end
+        end
+        return out
+    end
+    return tasks
+end
+
+-- ── Private: networking ───────────────────────────────────────────────────────(background, explicit)
     if not background then
         UIManager:show(InfoMessage:new { text = _("Syncing tasks…"), timeout = 2 })
     end
@@ -185,9 +232,9 @@ function TaskListWidget:_buildTaskItem(task, show_date)
 end
 
 function TaskListWidget:_render(from_cache)
-    -- Read both task lists from store (SPEC-010)
-    local today_tasks    = self.task_store:getTasks()
-    local overdue_tasks  = self.task_store:getOverdueTasks()
+    -- Read both task lists from store (SPEC-010); apply assignee filter (SPEC-015)
+    local today_tasks    = self:_filterTasks(self.task_store:getTasks())
+    local overdue_tasks  = self:_filterTasks(self.task_store:getOverdueTasks())
 
     -- SPEC-010 Req 3: show_overdue defaults to true when the key is absent
     local show_overdue   = self.settings:readSetting("show_overdue") ~= false
@@ -237,9 +284,12 @@ function TaskListWidget:_render(from_cache)
         })
     end
     -- Show the empty-state message only when the whole screen is blank
+    -- SPEC-015 Req: distinguish filter-induced empty from genuinely empty day
+    local empty_msg = (self.filter_assignee ~= "all")
+        and _("No tasks match the current filter") or _("No tasks due today")
     if #filtered_today == 0 and not has_overdue_section then
         table.insert(items, {
-            text     = _("No tasks due today"),
+            text     = empty_msg,
             dim      = true,
             callback = function() end,
         })
@@ -279,6 +329,23 @@ function TaskListWidget:_render(from_cache)
             self:_render(from_cache)
         end,
     })
+    -- SPEC-015 Req 6: assignee filter cycle button
+    table.insert(items, {
+        text = _("👤  Assignee: ") .. (FILTER_LABELS[self.filter_assignee] or self.filter_assignee),
+        callback = function()
+            local next_f = FILTER_MODES[1]
+            for i, f in ipairs(FILTER_MODES) do
+                if f == self.filter_assignee then
+                    next_f = FILTER_MODES[(i % #FILTER_MODES) + 1]
+                    break
+                end
+            end
+            self.filter_assignee = next_f
+            self.settings:saveSetting("filter_assignee", next_f)
+            self.settings:flush()
+            self:_render(from_cache)
+        end,
+    })
     table.insert(items, {
         text     = _("↻  Refresh"),
         callback = function() self:refresh(true) end,
@@ -292,20 +359,22 @@ function TaskListWidget:_render(from_cache)
         end,
     })
 
-    -- ── Title bar: cache banner + overdue badge + sort label ──
-    -- SPEC-007 Req 6, SPEC-010 Req 7
+    -- ── Title bar: cache banner + overdue badge + sort label + filter badge ──
+    -- SPEC-007 Req 6, SPEC-010 Req 7, SPEC-015 Req 12
     local sort_label    = (SORT_LABELS[self.sort_mode] or self.sort_mode)
         .. " " .. (self.sort_dir == "desc" and "↓" or "↑")
     local overdue_badge = has_overdue_section
         and ("  ·  " .. #sorted_overdue .. " overdue") or ""
+    local filter_badge  = self.filter_assignee ~= "all"
+        and ("  ·  " .. (FILTER_LABELS[self.filter_assignee] or self.filter_assignee)) or ""
     local title
     if from_cache then
         local age_min = math.floor(self.task_store:getCacheAgeSeconds() / 60)
         local badge   = NetworkMgr:isConnected() and "" or "  ·  Offline"
         title         = "Todoist  (synced " .. age_min .. "m ago" .. badge .. ")"
-            .. overdue_badge .. "  ·  by " .. sort_label
+            .. overdue_badge .. "  ·  by " .. sort_label .. filter_badge
     else
-        title = "Todoist — Today" .. overdue_badge .. "  ·  by " .. sort_label
+        title = "Todoist — Today" .. overdue_badge .. "  ·  by " .. sort_label .. filter_badge
     end
 
     self:_showOrUpdate(title, items)
