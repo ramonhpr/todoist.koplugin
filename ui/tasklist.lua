@@ -138,7 +138,9 @@ function TaskListWidget:_filterTasks(tasks)
     return tasks
 end
 
--- ── Private: networking ───────────────────────────────────────────────────────(background, explicit)
+-- ── Private: networking ─────────────────────────────────────────────────────────────────────────────
+
+function TaskListWidget:_fetchAndRender(background, explicit)
     if not background then
         UIManager:show(InfoMessage:new { text = _("Syncing tasks…"), timeout = 2 })
     end
