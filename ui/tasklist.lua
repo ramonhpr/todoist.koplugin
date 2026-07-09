@@ -115,12 +115,17 @@ function TaskListWidget:_filterTasks(tasks)
     local user_id = self.settings:readSetting("user_id")
     if mode == "me" then
         if not user_id then
-            UIManager:show(InfoMessage:new {
-                text    = _("User ID not yet resolved — showing all tasks"),
-                timeout = 3,
-            })
+            -- Only show the notice once per session to avoid spamming on every render
+            if not self._user_id_notice_shown then
+                self._user_id_notice_shown = true
+                UIManager:show(InfoMessage:new {
+                    text    = _("User ID not yet resolved — showing all tasks"),
+                    timeout = 3,
+                })
+            end
             return tasks
         end
+        self._user_id_notice_shown = nil -- reset once user_id is available
         local out = {}
         for _, t in ipairs(tasks) do
             if tostring(t.assignee_id or "") == tostring(user_id) then
@@ -145,6 +150,16 @@ function TaskListWidget:_fetchAndRender(background, explicit)
         UIManager:show(InfoMessage:new { text = _("Syncing tasks…"), timeout = 2 })
     end
     NetworkMgr:runWhenConnected(function()
+        -- SPEC-015 Req 3: lazily fetch user_id if absent (e.g. existing installs
+        -- that set their token before SPEC-015 was introduced)
+        if not self.settings:readSetting("user_id") then
+            local user, _ = self.api:getCurrentUser()
+            if user and user.id then
+                self.settings:saveSetting("user_id", tostring(user.id))
+                self.settings:flush()
+            end
+        end
+
         if explicit or not self.task_store:hasProjects() then
             local projects, _ = self.api:getProjects()
             if projects then
