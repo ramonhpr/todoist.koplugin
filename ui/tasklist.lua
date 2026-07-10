@@ -31,8 +31,8 @@ local SORT_LABELS      = { date = "Date", priority = "Priority", project = "Proj
 local DIR_LABELS       = { asc = "↑ Asc", desc = "↓ Desc" }
 
 -- Filter by assignee modes (SPEC-015)
-local FILTER_MODES     = { "all", "me", "unassigned" }
-local FILTER_LABELS    = { all = "All", me = "Me", unassigned = "Unassigned" }
+local FILTER_MODES     = { "all", "me", "unassigned", "me_and_unassigned" }
+local FILTER_LABELS    = { all = "All", me = "Me", unassigned = "Unassigned", me_and_unassigned = "Me & Unassigned" }
 
 function TaskListWidget:new(opts)
     -- SPEC-007 Req 1: read sort_mode; default to "date" when absent or invalid
@@ -137,6 +137,17 @@ function TaskListWidget:_filterTasks(tasks)
         local out = {}
         for _, t in ipairs(tasks) do
             if not t.assignee_id then table.insert(out, t) end
+        end
+        return out
+    elseif mode == "me_and_unassigned" then
+        local user_id = self.settings:readSetting("user_id")
+        local out = {}
+        for _, t in ipairs(tasks) do
+            if not t.assignee_id then
+                table.insert(out, t)
+            elseif user_id and tostring(t.assignee_id or "") == tostring(user_id) then
+                table.insert(out, t)
+            end
         end
         return out
     end
