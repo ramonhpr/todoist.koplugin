@@ -699,7 +699,15 @@ function TaskListWidget:_rescheduleTask(task, due_string, is_postpone)
         local ok, err = self.api:closeTask(task.id)
         finish(ok, err)
     else
-        local ok, err = self.api:updateTask(task.id, { due_string = due_string })
+        -- For recurring tasks, preserve the recurrence pattern by combining
+        -- the original recurrence string with the new target date.
+        -- Sending a plain date string (e.g. "tomorrow") to a recurring task
+        -- would strip the recurrence entirely.
+        local effective_due_string = due_string
+        if task.due and task.due.is_recurring and task.due.string and task.due.string ~= "" then
+            effective_due_string = task.due.string .. " starting " .. due_string
+        end
+        local ok, err = self.api:updateTask(task.id, { due_string = effective_due_string })
         finish(ok, err)
     end
 end
