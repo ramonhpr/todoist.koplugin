@@ -1,86 +1,164 @@
 ---
 id: SPEC-011
-title: Upcoming Tasks View
-status: DRAFT
+title: Home Screen, Inbox View, and Upcoming Tasks View
+status: DONE
 created: 2026-06-30
-updated: 2026-06-30
-resolved: 2026-06-30
+updated: 2026-07-14
 gate: G1
 ---
 
 ## Goal
 
-Let users browse tasks due on dates other than today — tomorrow, in two days, this weekend, next week — from within the plugin, without leaving KOReader.
+Replace the direct-launch-to-Today behaviour with a **home navigation screen** that gives users
+instant access to three task views — Inbox, Today, and Upcoming — from a single, consistent
+entry point. The Upcoming view presents tasks grouped by date across a configurable range, with
+a built-in date-picker to jump to any start date.
 
 ## Background
 
-The today view (SPEC-001) is limited to the current calendar day. Users preparing for the next day or planning the rest of the week currently have to open the Todoist mobile app on a separate device, which disrupts the reading flow.
+Previously, tapping the plugin icon opened the Today task list directly. An "Upcoming…" footer
+button allowed browsing future dates from the Today view, but only via four fixed presets
+(Tomorrow, In 2 days, This Weekend, Next Week). User feedback identified two gaps:
 
-The Todoist REST API v1 exposes the same `GET /tasks/filter?query=<expression>` endpoint already used by the today view, and the server resolves natural-language date expressions such as `"tomorrow"`, `"this saturday"`, and `"next monday"` natively. This makes preset-based upcoming browsing straightforward to implement without any local date arithmetic.
+1. **Inbox access** — users frequently need to triage newly captured tasks without digging through Today.
+2. **Upcoming flexibility** — fixed presets made it impossible to browse arbitrary future dates.
 
-The upcoming view is intentionally transient: it is a temporary overlay that does not replace or invalidate the today view. Users enter it, browse or act on tasks, then return to today. This keeps the cache model simple — upcoming results are never written to disk — and avoids complicating the notification and overdue logic that is anchored to the today session.
+The new design addresses both: a home screen is the entry point for all views, and the Upcoming
+view shows a multi-day grouped list (matching the layout of the Todoist mobile app) with a
+KOReader-native `DateTimeWidget` date picker to jump to any start date.
 
-Task actions (Complete, Reschedule) are available in the upcoming view using the same optimistic-update pattern from SPEC-004 and SPEC-009, so users can act on tomorrow's tasks immediately upon discovering them.
+The home screen always remains in KOReader's UIManager stack while any child view is open,
+so closing a child view naturally reveals the home screen — no callback-based back-navigation
+is required.
 
 ## Scope
 
 ### In scope
-- A `"📅  Upcoming…"` footer menu item on the today task list
-- A date-selection sub-menu with four preset options: Tomorrow, In 2 days, This Weekend, Next Week
-- Fetching tasks for the selected date via `GET /tasks/filter?query=<encoded_query>`
-- Displaying the results in a dedicated upcoming view titled `"Upcoming — <label>"`
-- Applying the active sort mode and direction (SPEC-007) to the fetched tasks
-- Project label display (SPEC-005) and priority prefixes on upcoming task rows
-- Complete and Reschedule actions on upcoming tasks (SPEC-004, SPEC-009)
-- Applying the active group mode (SPEC-008) to the fetched tasks, using the same section-header rendering as the today view
-- A `"← Today"` footer button in the upcoming view that returns the user to the today list
-- Offline detection with a meaningful error message
+
+- A **home navigation screen** titled `"KO-Tasks for Todoist"` with entries for Inbox, Today,
+  Upcoming, and Settings
+- An **Inbox view** fetching `GET /tasks/filter?query=%23Inbox`, displaying a flat sorted task list
+- An **Upcoming view** that:
+  - Fetches tasks for a configurable date range (`next N days` or an ISO date-range query)
+  - Groups tasks by due date with human-readable section headers (e.g. `"Mon 14 Jul · Today"`)
+  - Exposes a tappable date-range item at the top that opens KOReader's `DateTimeWidget` to
+    pick a custom start date
+  - Supports a footer range-cycle button: 7 → 14 → 30 days → 7
+- Applying sort (SPEC-007), assignee filter (SPEC-015), and project labels (SPEC-005) in all views
+- Complete and Reschedule actions (SPEC-004, SPEC-009) in Inbox and Upcoming with optimistic
+  update operating on the in-memory view task list only
+- A `"← Home"` footer button in all three task views
+- Offline detection for Inbox and Upcoming: show a notice and stay on the home screen
 
 ### Out of scope
-- Caching upcoming results to disk (upcoming data is session-transient)
-- Arbitrary date-picker input (presets only)
-- Displaying multiple upcoming days simultaneously
-- Notifications for upcoming tasks (SPEC-002 is today-scoped only)
+
+- Caching Inbox or Upcoming results to disk (both are session-transient)
+- A date-picker sub-menu with fixed presets (replaced by the grouped list + DateTimeWidget)
+- Displaying multiple upcoming date ranges simultaneously
+- Notifications for Inbox or Upcoming tasks (SPEC-002 is Today-scoped only)
+- The `"📅  Upcoming…"` footer button on the Today view (removed)
+- Group mode (SPEC-008) in Inbox/Upcoming (sort and filter only; grouping by project/priority
+  is out of scope for these transient views)
 
 ## Requirements
 
-1. The today task list footer **MUST** include a menu item labelled `"📅  Upcoming…"` that opens a date-selection sub-menu when tapped.
-2. The date-selection sub-menu **MUST** offer exactly four presets with the following labels and Todoist query strings:
+### Home Screen
 
-   | Label | Query string |
-   |---|---|
-   | Tomorrow | `tomorrow` |
-   | In 2 days | `in 2 days` |
-   | This Weekend | `this saturday` |
-   | Next Week | `next monday` |
+1. When the user taps the plugin icon, the plugin **MUST** display the home navigation screen
+   before any task list.
+2. The home screen **MUST** be titled `"KO-Tasks for Todoist"` and **MUST** display exactly the
+   following entries in order:
+   - `"Inbox"`
+   - `"Today"`
+   - `"Upcoming"`
+   - a visual separator
+   - `"Settings"`
+3. Tapping `"Today"` **MUST** open the Today task list (existing SPEC-001 behaviour).
+4. Tapping `"Inbox"` **MUST** open the Inbox view; if the device is offline the plugin **MUST**
+   show a notice and remain on the home screen.
+5. Tapping `"Upcoming"` **MUST** open the Upcoming view; if the device is offline the plugin
+   **MUST** show a notice and remain on the home screen.
+6. Tapping `"Settings"` **MUST** open the existing settings screen.
 
-3. The date-selection sub-menu **MUST** include a `"Cancel"` entry that dismisses the sub-menu and returns the user to the today view without making any API call.
-4. When the user selects a preset and the device is online, the plugin **MUST** display a loading indicator and then call `GET /tasks/filter?query=<URL-encoded query>` with the corresponding query string.
-5. On a successful fetch, the plugin **MUST** display the results in a menu-style upcoming view titled `"Upcoming — <label>"` (e.g. `"Upcoming — Tomorrow"`).
-6. The upcoming view title **MUST** include the active sort label and direction (e.g. `"Upcoming — Tomorrow · by Date ↑"`), consistent with the today view title format.
-7. The upcoming view **MUST** apply the active sort mode and direction from SPEC-007 to the fetched tasks.
-8. The upcoming view **MUST** apply the active group mode from SPEC-008 to the fetched tasks, rendering section headers using `is_title = true` items in the same way as the today view; empty sections **MUST** be omitted.
-9. The upcoming view **MUST** display project labels (SPEC-005) and priority prefixes on each task row, using the same row format as the today view.
-10. When the fetch returns zero tasks (and no group headers are shown), the upcoming view **MUST** show the message `"No tasks due on <label>"` (e.g. `"No tasks due on Tomorrow"`).
-11. The upcoming view **MUST** include a footer `"← Today"` button that closes the upcoming view and restores the today task list.
-12. Tasks in the upcoming view **MUST** support the Complete and Reschedule per-task actions (SPEC-004, SPEC-009) with the same optimistic-update and rollback semantics; a successfully completed upcoming task is removed from the upcoming view only.
-13. If the fetch fails (network error, 401, 429, etc.), the plugin **MUST** display an error message inside the upcoming view using the same error-classification patterns as the today view, and **MUST** offer both a `"↺ Retry"` and a `"← Today"` button.
-14. If the device is offline when the user selects a preset, the plugin **MUST** display a notice stating that an internet connection is required, **MUST NOT** navigate away from the today view, and **MUST NOT** attempt the API call.
-15. Upcoming task data **MUST NOT** be written to the disk cache; all upcoming results **MUST** be discarded when the user returns to the today view or closes the plugin.
-16. While an upcoming fetch is in progress, the plugin **MUST** prevent a second upcoming fetch from starting (e.g. by disabling the `"📅  Upcoming…"` button or showing the loading indicator).
+### Inbox View
+
+7. The Inbox view **MUST** fetch tasks via `GET /tasks/filter?query=%23Inbox`.
+8. The Inbox view title **MUST** follow the format `"Inbox  ·  by <sort> <dir>"`.
+9. The Inbox view **MUST** render a flat sorted task list using the same row format as Today
+   (priority prefix, title, due date, project label), with `show_date = true` so the full
+   date is always visible on each row.
+10. When the fetch returns zero tasks, the Inbox view **MUST** show `"No tasks in Inbox"`;
+    when a non-`"all"` assignee filter is active and produces an empty list, the message
+    **MUST** read `"No tasks match the current filter"`.
+11. Inbox results **MUST NOT** be written to the disk cache; they **MUST** be discarded when
+    the user returns to the home screen or closes the plugin.
+12. Tasks in the Inbox view **MUST** support Complete and Reschedule (SPEC-004, SPEC-009) with
+    optimistic update operating on the in-memory Inbox task list only.
+13. If the Inbox fetch fails, the plugin **MUST** show an error message (same classification as
+    Today) and **MUST** offer `"Refresh"` and `"Back"` buttons.
+
+### Upcoming View
+
+14. The Upcoming view **MUST** fetch tasks via `GET /tasks/filter?query=<encoded_query>` where
+    the query is one of:
+    - `next%20N%20days` (N = 7, 14, or 30) when no custom start date is set, anchored to today
+    - An ISO date-range query `due%20after%3A%20<start-1>%20%26%20due%20before%3A%20<start+N>`
+      when a custom start date has been set via the DateTimeWidget
+15. The Upcoming view title **MUST** follow the format `"Upcoming — <range_label>  ·  by <sort> <dir>"`,
+    where `<range_label>` is either `"Next N days"` or `"DD Mon – DD Mon YYYY"`.
+16. At the **top of the item list** (before any tasks or empty-state message), the Upcoming view
+    **MUST** render a tappable item displaying the current range label (e.g. `"[>] Next 7 days"`
+    or `"[>] 14 Jul – 20 Jul 2026"`). Tapping it **MUST** open KOReader's `DateTimeWidget`
+    pre-filled with the current start date (today if no custom date is set).
+17. When the user confirms a date in the `DateTimeWidget`, the plugin **MUST** store that date as
+    the new `upcoming_start_ts`, close the picker, and re-fetch immediately.
+18. Tasks **MUST** be grouped by due date using `is_title = true` section headers formatted as
+    `"<Day> <D> <Mon>"` (e.g. `"Mon 14 Jul"`), with `"· Today"` or `"· Tomorrow"` appended
+    where applicable. Days with no tasks **MUST** be omitted.
+19. Within each date group, tasks **MUST** be sorted by the active sort mode and direction
+    (SPEC-007); `show_date = false` is used since the date appears in the section header.
+20. When the fetch returns zero tasks, the Upcoming view **MUST** show
+    `"No upcoming tasks in this range"`; when a non-`"all"` assignee filter produces an empty
+    list the message **MUST** read `"No tasks match the current filter"`.
+21. The Upcoming view footer **MUST** include a `"Range: N days"` cycle button that advances
+    through 7 → 14 → 30 → 7 and immediately re-fetches.
+22. Upcoming results **MUST NOT** be written to the disk cache.
+23. Tasks in the Upcoming view **MUST** support Complete and Reschedule (SPEC-004, SPEC-009)
+    with optimistic update operating on the in-memory Upcoming task list only.
+24. If the Upcoming fetch fails, the plugin **MUST** show an error message and offer
+    `"Refresh"` and `"Back"` buttons.
+
+### Shared footer and sort/filter
+
+25. All three task views (Inbox, Today, Upcoming) **MUST** include the following footer buttons:
+    - Sort cycle (`"Sort: <mode>"`)
+    - Direction toggle (`"Direction: <dir>"`)
+    - Assignee filter cycle (`"Assignee: <mode>"`) (SPEC-015)
+    - `"Refresh"` (re-fetches fresh data)
+    - `"Settings"`
+    - `"Back"` (closes the current menu; the home screen is revealed underneath)
+26. The `"📅  Upcoming…"` footer button that existed on the Today view **MUST NOT** appear.
+27. Tapping `"Back"` **MUST** call `UIManager:close(self._menu)`; no additional callback is
+    required because the home screen remains in the UIManager stack.
 
 ## Edge Cases
 
-- `"This Weekend"` selected on a Saturday or Sunday: `"this saturday"` is resolved server-side; the plugin passes the literal string and does no local date arithmetic.
-- `"Next Week"` selected on a Monday: `"next monday"` resolves to the following Monday server-side; no special handling in the plugin.
-- User completes an upcoming task and taps `"← Today"`: the today view is unaffected — the completed task was not in today's list.
-- User reschedules an upcoming task to today from the upcoming view: the task is removed from the upcoming view; the today list is not immediately updated (it refreshes on next sync or explicit refresh).
-- Network drops mid-fetch: treat as a network error; show the error state within the upcoming view with Retry and `"← Today"` buttons.
-- Very long task title in the upcoming view: the same truncation rules from SPEC-001 apply (78-character row limit).
-- Upcoming view opened with `"project"` sort mode but the project cache is empty: project labels are omitted per SPEC-005 rules; no error is shown.
-- Upcoming view opened with `"project"` group mode but the project cache is empty: all tasks fall into the `"Unknown Project"` group per SPEC-008 rules; no error is shown.
-- `"date"` group mode active in the upcoming view: time-bucket section headers (Morning, Afternoon, Evening, All day) apply normally; the `"Overdue"` bucket is conceptually irrelevant for future dates but **MUST** still be rendered for any task the API returns whose due datetime compares as past at render time.
-- User rapidly taps `"📅  Upcoming…"` multiple times: only one sub-menu may be open at a time; subsequent taps before the first closes must be ignored.
+- **Custom start date in the past**: the ISO date-range query is sent as-is; the server returns
+  tasks for the requested range (may include overdue tasks); no special client-side handling.
+- **Custom start date far in the future**: same — query sent as-is; the server returns results
+  or an empty list.
+- **DateTimeWidget cancelled**: `upcoming_start_ts` is unchanged; the view is not re-fetched.
+- **Range changed while a custom start date is set**: the custom `upcoming_start_ts` is
+  preserved; the new range is applied from the same start date.
+- **"Back" tapped from Home → Today → Back**: Today menu closes; Home is visible again.
+- **User completes an Upcoming task and taps "Back"**: the Today view is unaffected.
+- **Network drops mid-fetch**: treated as a network error; error state shown with Refresh and
+  Back buttons.
+- **Inbox opened with "project" sort but project cache empty**: project labels omitted per
+  SPEC-005 rules; no error shown.
+- **Very long task title**: same 78-character truncation rules as SPEC-001 apply.
+- **`upcoming_start_ts` set to today**: the ISO range query `due after: yesterday & due before: today+N`
+  produces the same effective result as `next N days`; no special handling needed.
 
 ## Open Questions
 
@@ -88,9 +166,9 @@ Task actions (Complete, Reschedule) are available in the upcoming view using the
 
 ## Related
 
-- SPEC-001 — Today's task list (base view; upcoming is an overlay on top of it)
-- SPEC-004 — Complete Task Action (optimistic-update pattern reused in upcoming view)
-- SPEC-005 — Project display (project labels shown on upcoming task rows)
-- SPEC-007 — Sort order (sort mode and direction applied within upcoming view)
-- SPEC-008 — Task grouping (group mode applied within upcoming view)
-- SPEC-009 — Reschedule Task Action (available on upcoming tasks)
+- SPEC-001 — Today's task list (shared row format, title format, error patterns)
+- SPEC-004 — Complete Task Action (optimistic-update pattern reused)
+- SPEC-005 — Project display (project labels in all views)
+- SPEC-007 — Sort order (applied in all views)
+- SPEC-009 — Reschedule Task Action (available in Inbox and Upcoming)
+- SPEC-015 — Assignee filter (applied in all views)
