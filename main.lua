@@ -12,7 +12,8 @@
       api.lua           — Todoist API v1 client
       taskstore.lua     — in-memory task state + disk cache
       notifications.lua — UIManager-based due-time scheduler
-      ui/tasklist.lua   — today's task list widget
+      ui/home.lua        — home navigation screen (Inbox / Today / Upcoming)
+      ui/tasklist.lua   — task list widget (today / inbox / upcoming views)
       ui/settings.lua   — settings widget
 --]]
 
@@ -92,18 +93,31 @@ function TodoistPlugin:openTaskList()
         self:openSettings()
         return
     end
-
-    -- Sync the token into the API client (may have changed in Settings)
     self.api:setToken(token)
 
+    local HomeWidget = require("ui/home")
+    HomeWidget:new {
+        on_view     = function(mode, label, query)
+            self:openView(mode, label, query)
+        end,
+        on_settings = function()
+            self:openSettings()
+        end,
+    }
+end
+
+function TodoistPlugin:openView(mode, label, query)
     local TaskListWidget = require("ui/tasklist")
     local widget = TaskListWidget:new {
-        plugin        = self,
-        task_store    = self.task_store,
-        api           = self.api,
-        notifications = self.notifications,
-        settings      = self.settings,
-        on_settings   = function(on_display_changed) self:openSettings(on_display_changed) end,
+        plugin         = self,
+        task_store     = self.task_store,
+        api            = self.api,
+        notifications  = self.notifications,
+        settings       = self.settings,
+        view_mode      = mode,
+        upcoming_label = label,
+        upcoming_query = query,
+        on_settings    = function(cb) self:openSettings(cb) end,
     }
     widget:refresh()
 end

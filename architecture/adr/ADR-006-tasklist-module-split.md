@@ -1,7 +1,7 @@
 ---
 id: ADR-006
 title: Split tasklist.lua into focused submodules
-status: PROPOSED
+status: ACCEPTED
 date: 2026-07-14
 ---
 

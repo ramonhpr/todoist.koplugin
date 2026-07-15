@@ -180,15 +180,23 @@ todoist.koplugin/
 ├── _meta.lua              # KOReader plugin metadata (name, version)
 └── ui/
     ├── home.lua           # Home navigation screen (Inbox / Today / Upcoming / Settings)
-    ├── tasklist.lua       # Unified task list widget — today, inbox, upcoming views (1058 lines)
+    ├── tasklist.lua       # Coordinator: widget lifecycle, shared constants, extend() calls (~150 lines)
+    ├── sort_filter.lua    # _filterTasks, _sortTasks, sort comparators (SPEC-007, SPEC-015)
+    ├── task_row.lua       # _buildTaskItem — shared row builder used by all views
+    ├── render_today.lua   # _fetchAndRender, _render, _renderError — Today + overdue view
+    ├── render_views.lua   # _fetchAndRenderView, _renderView, _renderViewError — Inbox + Upcoming
+    ├── actions.lua        # _onTaskTap, _completeTask, _showRescheduleMenu, _rescheduleTask
     └── settings.lua       # Settings screen (token, sort, filter, notifications)
 ```
 
 ---
 
-## Planned Improvements
+## Composition Pattern (ADR-006)
 
-- **`tasklist.lua` split** — at 1058 lines the widget has grown beyond a single reasonable
-  file. ADR-006 (forthcoming) will capture the decision to split it into focused sub-modules
-  (e.g. `ui/tasklist/today.lua`, `ui/tasklist/inbox.lua`, `ui/tasklist/upcoming.lua` or a
-  similar decomposition). Track that ADR for the rationale and migration plan.
+All `ui/task*.lua` and `ui/render_*.lua` submodules follow the `extend(T, C)` pattern:
+- Each file exports a single `M.extend(T, C)` function.
+- The coordinator (`tasklist.lua`) calls every `extend` at module-load time, installing
+  methods directly onto the shared `TaskListWidget` table.
+- Constants (`SORT_MODES`, `PRIO_PREFIX`, etc.) are defined once in `tasklist.lua` and
+  passed as `C` to each submodule — no globals, no circular `require`.
+- No file in `ui/` may exceed 300 lines (ADR-006 guard against re-bloat).
