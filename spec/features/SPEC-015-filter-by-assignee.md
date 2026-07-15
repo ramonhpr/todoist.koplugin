@@ -1,9 +1,9 @@
 ---
 id: SPEC-015
 title: Filter by Assignee
-status: APPROVED
+status: DONE
 created: 2026-07-08
-updated: 2026-07-08
+updated: 2026-07-14
 gate: G1
 ---
 
@@ -13,7 +13,7 @@ Allow users to narrow the task list to tasks assigned to them, tasks that are un
 
 ## Background
 
-Every Todoist task carries an `assignee_id` field. In personal (non-shared) projects this field is always `null`; in shared projects it holds the numeric ID of the user the task has been delegated to. Until now the plugin shows every fetched task regardless of assignment, which means users in team workspaces see their colleagues' tasks mixed in with their own.
+Every Todoist task carries a `user_id` field that identifies the user the task is assigned to. In personal (non-shared) projects this field is always `null`; in shared projects it holds the numeric ID of the user the task has been delegated to. Until now the plugin shows every fetched task regardless of assignment, which means users in team workspaces see their colleagues' tasks mixed in with their own.
 
 Filtering is applied **client-side** after the standard fetch, consistent with the deduplication and overdue-split logic already in the render pipeline. No additional API calls are needed once the current user's ID is known.
 
@@ -24,7 +24,7 @@ The active filter mode is persisted under the key `filter_assignee` in the main 
 ## Scope
 
 ### In scope
-- Three filter modes: `"all"` (default), `"me"`, `"unassigned"`
+- Four filter modes: `"all"` (default), `"me"`, `"unassigned"`, `"me_and_unassigned"`
 - Fetching and caching the current user's ID via `GET /user` in `api.lua`
 - Storing `user_id` in the main plugin settings file; refreshing it when the API token changes
 - Storing the active filter mode under `filter_assignee` in main settings; defaulting to `"all"` when absent or invalid
@@ -46,15 +46,16 @@ The active filter mode is persisted under the key `filter_assignee` in the main 
 2. Immediately after a successful API token save-and-test in the Settings screen, the plugin **MUST** call `Api:getCurrentUser()` and, if successful, store the returned `id` field under the key `user_id` in the main plugin settings file.
 3. On plugin initialisation (`init()`), if `user_id` is absent from settings and a valid API token is present, the plugin **MUST** attempt to fetch and store the user ID before the first task list render; if the fetch fails, the plugin **MUST** proceed without a user ID and treat the filter as `"all"` until a successful fetch occurs.
 4. The plugin **MUST** read `filter_assignee` from settings on task list initialisation; if the key is absent or holds an unrecognised value, the mode **MUST** default to `"all"` and the invalid value **MUST** be overwritten.
-5. The three valid `filter_assignee` values and their semantics are:
+5. The four valid `filter_assignee` values and their semantics are:
 
    | Value | Tasks shown |
    |---|---|
-   | `"all"` | All tasks regardless of `assignee_id` (current behaviour) |
-   | `"me"` | Only tasks where `assignee_id` equals the cached `user_id` |
-   | `"unassigned"` | Only tasks where `assignee_id` is `null` or absent |
+   | `"all"` | All tasks regardless of `user_id` (current behaviour) |
+   | `"me"` | Only tasks where `user_id` equals the cached `user_id` setting |
+   | `"unassigned"` | Only tasks where `user_id` is `null` or absent |
+   | `"me_and_unassigned"` | Tasks where `user_id` is `null`/absent OR equals the cached `user_id` setting |
 
-6. The today task list footer **MUST** include a cycle button labelled `"👤  Assignee: <mode>"` (e.g. `"👤  Assignee: All"`, `"👤  Assignee: Me"`, `"👤  Assignee: Unassigned"`) that advances through the three modes in the order `"all"` → `"me"` → `"unassigned"` → `"all"`.
+6. The today task list footer **MUST** include a cycle button labelled `"👤  Assignee: <mode>"` that advances through the four modes in the order `"all"` → `"me"` → `"unassigned"` → `"me_and_unassigned"` → `"all"`.
 7. Activating the filter cycle button **MUST** immediately re-render the task list with the new filter applied, without a network request.
 8. When the user changes the filter mode, the new value **MUST** be written to settings so the same mode is restored on the next plugin launch.
 9. The filter **MUST** be applied to both the today section and the overdue section in the today view (SPEC-010), independently of the sort mode (SPEC-007) and group mode (SPEC-008).
@@ -65,9 +66,9 @@ The active filter mode is persisted under the key `filter_assignee` in the main 
 
 ## Edge Cases
 
-- User has only personal (non-shared) projects: all tasks have `assignee_id == null`. With `"me"` selected the list will always be empty; with `"unassigned"` the list shows all tasks. Both are correct and expected.
+- User has only personal (non-shared) projects: all tasks have `user_id == null`. With `"me"` selected the list will always be empty; with `"unassigned"` the list shows all tasks. Both are correct and expected.
 - `user_id` changes (user switches to a different Todoist account by re-entering the token): the stored `user_id` **MUST** be overwritten by the new value fetched after the token change; the filter re-applies automatically on the next render.
-- `filter_assignee == "me"` and the cached `user_id` does not match any task's `assignee_id` (e.g. all tasks are unassigned or assigned to colleagues): the task list renders empty, which is correct; no error is shown.
+- `filter_assignee == "me"` and the cached `user_id` does not match any task's `user_id` (e.g. all tasks are unassigned or assigned to colleagues): the task list renders empty, which is correct; no error is shown.
 - An empty list after filtering (all tasks filtered out): the standard empty-state message **MUST** read `"No tasks match the current filter"` instead of `"No tasks due today"`, to distinguish a filter-induced empty state from a genuinely empty day.
 - `GET /user` fails during token save (network error, 401, etc.): the plugin **MUST** still save the token and proceed; `user_id` is left absent; Req 11 fallback applies.
 - The filter is changed while the upcoming view is open: the upcoming view **MUST** re-render immediately with the new filter applied to the already-fetched task list, without a new network request.

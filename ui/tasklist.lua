@@ -15,6 +15,7 @@ local Menu             = require("ui/widget/menu")
 local NetworkMgr       = require("ui/network/manager")
 local Screen           = require("device").screen
 local UIManager        = require("ui/uimanager")
+local logger           = require("logger")
 local _                = require("gettext")
 
 -- Priority prefix shown before task title
@@ -109,13 +110,30 @@ end
 
 -- ── Private: filter helper (SPEC-015) ────────────────────────────────────────
 
+-- rapidjson represents JSON null as a userdata sentinel, not Lua nil.
+-- Both must be treated as "no assignee".
+local function is_null(v)
+    return v == nil or type(v) == "userdata"
+end
+
 function TaskListWidget:_filterTasks(tasks)
     local mode = self.filter_assignee
     if mode == "all" then return tasks end
+
     local user_id = self.settings:readSetting("user_id")
+
+    -- Debug: log assignee_id values on the first call to help diagnose issues
+    if not self._filter_debug_logged then
+        self._filter_debug_logged = true
+        logger.dbg("Todoist SPEC-015: filter mode=", mode, " user_id=", tostring(user_id))
+        for _, t in ipairs(tasks) do
+            logger.dbg("  task id=", t.id, " user_id=", tostring(t.user_id),
+                " type=", type(t.user_id), " content=", (t.content or "?"):sub(1, 40))
+        end
+    end
+
     if mode == "me" then
         if not user_id then
-            -- Only show the notice once per session to avoid spamming on every render
             if not self._user_id_notice_shown then
                 self._user_id_notice_shown = true
                 UIManager:show(InfoMessage:new {
@@ -125,10 +143,11 @@ function TaskListWidget:_filterTasks(tasks)
             end
             return tasks
         end
-        self._user_id_notice_shown = nil -- reset once user_id is available
+        self._user_id_notice_shown = nil
         local out = {}
         for _, t in ipairs(tasks) do
-            if tostring(t.assignee_id or "") == tostring(user_id) then
+            if not is_null(t.user_id)
+                and tostring(t.user_id) == tostring(user_id) then
                 table.insert(out, t)
             end
         end
@@ -136,16 +155,16 @@ function TaskListWidget:_filterTasks(tasks)
     elseif mode == "unassigned" then
         local out = {}
         for _, t in ipairs(tasks) do
-            if not t.assignee_id then table.insert(out, t) end
+            if is_null(t.user_id) then table.insert(out, t) end
         end
         return out
     elseif mode == "me_and_unassigned" then
-        local user_id = self.settings:readSetting("user_id")
         local out = {}
         for _, t in ipairs(tasks) do
-            if not t.assignee_id then
+            if is_null(t.user_id) then
                 table.insert(out, t)
-            elseif user_id and tostring(t.assignee_id or "") == tostring(user_id) then
+            elseif user_id and not is_null(t.user_id)
+                and tostring(t.user_id) == tostring(user_id) then
                 table.insert(out, t)
             end
         end
