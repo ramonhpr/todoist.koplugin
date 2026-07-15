@@ -13,7 +13,7 @@ Allow users to narrow the task list to tasks assigned to them, tasks that are un
 
 ## Background
 
-Every Todoist task carries a `user_id` field that identifies the user the task is assigned to. In personal (non-shared) projects this field is always `null`; in shared projects it holds the numeric ID of the user the task has been delegated to. Until now the plugin shows every fetched task regardless of assignment, which means users in team workspaces see their colleagues' tasks mixed in with their own.
+Every Todoist task carries a `responsible_uid` field that identifies the user the task is assigned to. In personal (non-shared) projects this field is always `null`; in shared projects it holds the numeric ID of the user the task has been delegated to. Until now the plugin shows every fetched task regardless of assignment, which means users in team workspaces see their colleagues' tasks mixed in with their own.
 
 Filtering is applied **client-side** after the standard fetch, consistent with the deduplication and overdue-split logic already in the render pipeline. No additional API calls are needed once the current user's ID is known.
 
@@ -50,10 +50,10 @@ The active filter mode is persisted under the key `filter_assignee` in the main 
 
    | Value | Tasks shown |
    |---|---|
-   | `"all"` | All tasks regardless of `user_id` (current behaviour) |
-   | `"me"` | Only tasks where `user_id` equals the cached `user_id` setting |
-   | `"unassigned"` | Only tasks where `user_id` is `null` or absent |
-   | `"me_and_unassigned"` | Tasks where `user_id` is `null`/absent OR equals the cached `user_id` setting |
+   | `"all"` | All tasks regardless of `responsible_uid` (current behaviour) |
+   | `"me"` | Only tasks where `responsible_uid` equals the cached `user_id` setting |
+   | `"unassigned"` | Only tasks where `responsible_uid` is `null` or absent |
+   | `"me_and_unassigned"` | Tasks where `responsible_uid` is `null`/absent OR equals the cached `user_id` setting |
 
 6. The today task list footer **MUST** include a cycle button labelled `"👤  Assignee: <mode>"` that advances through the four modes in the order `"all"` → `"me"` → `"unassigned"` → `"me_and_unassigned"` → `"all"`.
 7. Activating the filter cycle button **MUST** immediately re-render the task list with the new filter applied, without a network request.
@@ -66,9 +66,9 @@ The active filter mode is persisted under the key `filter_assignee` in the main 
 
 ## Edge Cases
 
-- User has only personal (non-shared) projects: all tasks have `user_id == null`. With `"me"` selected the list will always be empty; with `"unassigned"` the list shows all tasks. Both are correct and expected.
+- User has only personal (non-shared) projects: all tasks have `responsible_uid == null`. With `"me"` selected the list will always be empty; with `"unassigned"` the list shows all tasks. Both are correct and expected.
 - `user_id` changes (user switches to a different Todoist account by re-entering the token): the stored `user_id` **MUST** be overwritten by the new value fetched after the token change; the filter re-applies automatically on the next render.
-- `filter_assignee == "me"` and the cached `user_id` does not match any task's `user_id` (e.g. all tasks are unassigned or assigned to colleagues): the task list renders empty, which is correct; no error is shown.
+- `filter_assignee == "me"` and the cached `user_id` does not match any task's `responsible_uid` (e.g. all tasks are unassigned or assigned to colleagues): the task list renders empty, which is correct; no error is shown.
 - An empty list after filtering (all tasks filtered out): the standard empty-state message **MUST** read `"No tasks match the current filter"` instead of `"No tasks due today"`, to distinguish a filter-induced empty state from a genuinely empty day.
 - `GET /user` fails during token save (network error, 401, etc.): the plugin **MUST** still save the token and proceed; `user_id` is left absent; Req 11 fallback applies.
 - The filter is changed while the upcoming view is open: the upcoming view **MUST** re-render immediately with the new filter applied to the already-fetched task list, without a new network request.

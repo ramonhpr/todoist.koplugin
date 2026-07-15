@@ -127,8 +127,8 @@ function TaskListWidget:_filterTasks(tasks)
         self._filter_debug_logged = true
         logger.dbg("Todoist SPEC-015: filter mode=", mode, " user_id=", tostring(user_id))
         for _, t in ipairs(tasks) do
-            logger.dbg("  task id=", t.id, " user_id=", tostring(t.user_id),
-                " type=", type(t.user_id), " content=", (t.content or "?"):sub(1, 40))
+            logger.dbg("  task id=", t.id, " responsible_uid=", tostring(t.responsible_uid),
+                " type=", type(t.responsible_uid), " content=", (t.content or "?"):sub(1, 40))
         end
     end
 
@@ -146,8 +146,8 @@ function TaskListWidget:_filterTasks(tasks)
         self._user_id_notice_shown = nil
         local out = {}
         for _, t in ipairs(tasks) do
-            if not is_null(t.user_id)
-                and tostring(t.user_id) == tostring(user_id) then
+            if not is_null(t.responsible_uid)
+                and tostring(t.responsible_uid) == tostring(user_id) then
                 table.insert(out, t)
             end
         end
@@ -155,16 +155,16 @@ function TaskListWidget:_filterTasks(tasks)
     elseif mode == "unassigned" then
         local out = {}
         for _, t in ipairs(tasks) do
-            if is_null(t.user_id) then table.insert(out, t) end
+            if is_null(t.responsible_uid) then table.insert(out, t) end
         end
         return out
     elseif mode == "me_and_unassigned" then
         local out = {}
         for _, t in ipairs(tasks) do
-            if is_null(t.user_id) then
+            if is_null(t.responsible_uid) then
                 table.insert(out, t)
-            elseif user_id and not is_null(t.user_id)
-                and tostring(t.user_id) == tostring(user_id) then
+            elseif user_id and not is_null(t.responsible_uid)
+                and tostring(t.responsible_uid) == tostring(user_id) then
                 table.insert(out, t)
             end
         end
